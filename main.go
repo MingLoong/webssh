@@ -114,6 +114,15 @@ func main() {
 		file.POST("/upload/abort", func(c *gin.Context) {
 			c.JSON(200, controller.UploadAbort(c))
 		})
+		file.POST("/copy", func(c *gin.Context) {
+			c.JSON(200, controller.CopyFileOrDir(c))
+		})
+		file.POST("/paste", func(c *gin.Context) {
+			c.JSON(200, controller.PasteFileOrDir(c))
+		})
+		file.POST("/delete", func(c *gin.Context) {
+			c.JSON(200, controller.DeleteFileOrDir(c))
+		})
 		file.GET("/progress", func(c *gin.Context) {
 			controller.UploadProgressWs(c)
 		})

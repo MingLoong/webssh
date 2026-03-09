@@ -79,7 +79,7 @@
 
     <div v-if="uploadTasks.length" class="task-panel">
       <div class="task-panel-header">
-        <span>上传任务</span>
+        <span>上传任务（等待 {{ queuedCount }}，上传中 {{ uploadingCount }}）</span>
         <el-button type="text" @click="clearFinishedTasks">清理已完成</el-button>
       </div>
       <div class="task-list">
@@ -148,6 +148,12 @@ export default {
     },
     taskDisplayList () {
       return this.uploadTasks.slice().reverse().slice(0, 30)
+    },
+    queuedCount () {
+      return this.uploadTasks.filter(v => v.status === 'queued').length
+    },
+    uploadingCount () {
+      return this.uploadTasks.filter(v => v.status === 'uploading').length
     }
   },
   watch: {
@@ -168,7 +174,7 @@ export default {
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         uid,
         fullName,
-        status: 'uploading',
+        status: 'queued',
         progress: 0,
         message: ''
       }
@@ -182,13 +188,14 @@ export default {
       return this.uploadTasks.find(v => v.uid === uid)
     },
     taskStatusText (status) {
+      if (status === 'queued') return '等待上传'
       if (status === 'uploading') return '上传中'
       if (status === 'success') return '成功'
       if (status === 'failed') return '失败'
       return status
     },
     clearFinishedTasks () {
-      this.uploadTasks = this.uploadTasks.filter(v => v.status === 'uploading')
+      this.uploadTasks = this.uploadTasks.filter(v => v.status === 'uploading' || v.status === 'queued')
     },
     handlePanelDragEnter () {
       this.panelDragCounter += 1
@@ -224,13 +231,14 @@ export default {
     async handleDialogDrop (e) {
       this.dialogDragCounter = 0
       this.isDialogDragOver = false
+      if (this.uploadVisible) {
+        this.uploadVisible = false
+      }
       const result = await this.uploadFromDataTransfer(e.dataTransfer, {
         mode: this.uploadMode,
         strictMode: true
       })
-      if (result.successCount > 0) {
-        this.uploadVisible = false
-      }
+      return result
     },
     async uploadFromDataTransfer (dataTransfer, options = {}) {
       const mode = options.mode || 'both'
@@ -251,9 +259,14 @@ export default {
         return { successCount: 0, totalCount: entries.length }
       }
 
+      const queue = entries.map(item => ({
+        ...item,
+        task: this.createUploadTask(item.file, item.dir || '')
+      }))
+
       let successCount = 0
-      for (const item of entries) {
-        const ok = await this.uploadDroppedFile(item.file, item.dir || '')
+      for (const item of queue) {
+        const ok = await this.uploadDroppedFile(item.file, item.dir || '', item.task)
         if (ok) {
           successCount += 1
         }
@@ -339,8 +352,9 @@ export default {
         readBatch()
       })
     },
-    async uploadDroppedFile (file, dir) {
-      const task = this.createUploadTask(file, dir)
+    async uploadDroppedFile (file, dir, taskRef = null) {
+      const task = taskRef || this.createUploadTask(file, dir)
+      task.status = 'uploading'
       const formData = new FormData()
       formData.append('sshInfo', this.$store.getters.sshReq)
       formData.append('path', this.currentPath)
@@ -706,6 +720,10 @@ export default {
 
 .task-status.is-uploading {
   color: #2563eb;
+}
+
+.task-status.is-queued {
+  color: #6b7280;
 }
 
 .task-status.is-success {

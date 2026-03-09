@@ -95,7 +95,27 @@
     </div>
 
     <el-dialog title="修改权限" :visible.sync="chmodDialog.visible" width="320px" append-to-body>
-      <el-input v-model.trim="chmodDialog.mode" placeholder="例如 755"></el-input>
+      <el-input v-model.trim="chmodDialog.mode" placeholder="例如 755" @input="onChmodModeInput"></el-input>
+      <div class="chmod-grid">
+        <div class="chmod-row">
+          <span class="chmod-label">所有者</span>
+          <label><input type="checkbox" v-model="chmodDialog.bits.owner.r" @change="onChmodBitsChange"> 读</label>
+          <label><input type="checkbox" v-model="chmodDialog.bits.owner.w" @change="onChmodBitsChange"> 写</label>
+          <label><input type="checkbox" v-model="chmodDialog.bits.owner.x" @change="onChmodBitsChange"> 执行</label>
+        </div>
+        <div class="chmod-row">
+          <span class="chmod-label">用户组</span>
+          <label><input type="checkbox" v-model="chmodDialog.bits.group.r" @change="onChmodBitsChange"> 读</label>
+          <label><input type="checkbox" v-model="chmodDialog.bits.group.w" @change="onChmodBitsChange"> 写</label>
+          <label><input type="checkbox" v-model="chmodDialog.bits.group.x" @change="onChmodBitsChange"> 执行</label>
+        </div>
+        <div class="chmod-row">
+          <span class="chmod-label">其他</span>
+          <label><input type="checkbox" v-model="chmodDialog.bits.other.r" @change="onChmodBitsChange"> 读</label>
+          <label><input type="checkbox" v-model="chmodDialog.bits.other.w" @change="onChmodBitsChange"> 写</label>
+          <label><input type="checkbox" v-model="chmodDialog.bits.other.x" @change="onChmodBitsChange"> 执行</label>
+        </div>
+      </div>
       <div slot="footer" class="dialog-footer">
         <el-button size="small" @click="chmodDialog.visible = false">取消</el-button>
         <el-button size="small" type="primary" @click="submitChmod">确定</el-button>
@@ -182,7 +202,12 @@ export default {
       chmodDialog: {
         visible: false,
         path: '',
-        mode: ''
+        mode: '',
+        bits: {
+          owner: { r: true, w: true, x: true },
+          group: { r: true, w: false, x: true },
+          other: { r: true, w: false, x: true }
+        }
       }
     }
   },
@@ -271,6 +296,39 @@ export default {
         return String(n)
       }
       return triads.map(toDigit).join('')
+    },
+    modeToBits (mode) {
+      const m = String(mode || '').replace(/[^0-7]/g, '').slice(-3).padStart(3, '0')
+      const toBits = (digit) => {
+        const n = Number(digit) || 0
+        return {
+          r: (n & 4) > 0,
+          w: (n & 2) > 0,
+          x: (n & 1) > 0
+        }
+      }
+      return {
+        owner: toBits(m[0]),
+        group: toBits(m[1]),
+        other: toBits(m[2])
+      }
+    },
+    bitsToMode (bits) {
+      const toDigit = (v) => {
+        let n = 0
+        if (v.r) n += 4
+        if (v.w) n += 2
+        if (v.x) n += 1
+        return String(n)
+      }
+      return `${toDigit(bits.owner)}${toDigit(bits.group)}${toDigit(bits.other)}`
+    },
+    onChmodModeInput () {
+      this.chmodDialog.bits = this.modeToBits(this.chmodDialog.mode)
+      this.chmodDialog.mode = this.bitsToMode(this.chmodDialog.bits)
+    },
+    onChmodBitsChange () {
+      this.chmodDialog.mode = this.bitsToMode(this.chmodDialog.bits)
     },
     async copyByContext () {
       const row = this.contextMenu.row
@@ -364,6 +422,7 @@ export default {
       if (!targetPath) return
       this.chmodDialog.path = targetPath
       this.chmodDialog.mode = this.permissionTextToOctal(row && row.Permission)
+      this.chmodDialog.bits = this.modeToBits(this.chmodDialog.mode)
       this.chmodDialog.visible = true
     },
     async submitChmod () {
@@ -1115,6 +1174,32 @@ export default {
   color: #9ca3af;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+.chmod-grid {
+  margin-top: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  background: #fafafa;
+}
+
+.chmod-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.chmod-row:last-child {
+  margin-bottom: 0;
+}
+
+.chmod-label {
+  width: 48px;
+  color: #6b7280;
 }
 
 .task-panel {

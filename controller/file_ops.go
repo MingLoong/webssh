@@ -39,7 +39,11 @@ func removeRemoteRecursive(client *sftp.Client, targetPath string) error {
 			return err
 		}
 	}
-	return client.RemoveDirectory(targetPath)
+	if err := client.RemoveDirectory(targetPath); err != nil {
+		// Some SFTP servers only support Remove for directory deletion.
+		return client.Remove(targetPath)
+	}
+	return nil
 }
 
 func copyRemoteFile(client *sftp.Client, srcPath, dstPath string) error {
@@ -216,6 +220,107 @@ func PasteFileOrDir(c *gin.Context) *ResponseBody {
 
 	responseBody.Data = gin.H{
 		"path": dstFullPath,
+	}
+	return &responseBody
+}
+
+// MoveFileOrDir moves src into dst directory.
+func MoveFileOrDir(c *gin.Context) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	srcPath := strings.TrimSpace(c.DefaultPostForm("srcPath", ""))
+	dstPath := strings.TrimSpace(c.DefaultPostForm("dstPath", ""))
+	sshInfo := strings.TrimSpace(c.DefaultPostForm("sshInfo", ""))
+	if srcPath == "" || dstPath == "" || sshInfo == "" {
+		responseBody.Msg = "srcPath, dstPath and sshInfo are required"
+		return &responseBody
+	}
+
+	sshClient, err := core.DecodedMsgToSSHClient(sshInfo)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	if err := sshClient.CreateSftp(); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	defer sshClient.Close()
+
+	baseName := remoteBaseName(srcPath)
+	if baseName == "" {
+		responseBody.Msg = "invalid source path"
+		return &responseBody
+	}
+	dstFullPath := path.Join(dstPath, baseName)
+	if path.Clean(srcPath) == path.Clean(dstFullPath) {
+		responseBody.Msg = "source and destination are the same"
+		return &responseBody
+	}
+
+	if _, err := sshClient.Sftp.Stat(dstFullPath); err == nil {
+		responseBody.Msg = fmt.Sprintf("target already exists: %s", dstFullPath)
+		return &responseBody
+	}
+
+	if err := sshClient.Sftp.Rename(srcPath, dstFullPath); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+
+	responseBody.Data = gin.H{
+		"path": dstFullPath,
+	}
+	return &responseBody
+}
+
+// RenameFileOrDir renames src name in the same directory.
+func RenameFileOrDir(c *gin.Context) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	srcPath := strings.TrimSpace(c.DefaultPostForm("srcPath", ""))
+	newName := strings.TrimSpace(c.DefaultPostForm("newName", ""))
+	sshInfo := strings.TrimSpace(c.DefaultPostForm("sshInfo", ""))
+	if srcPath == "" || newName == "" || sshInfo == "" {
+		responseBody.Msg = "srcPath, newName and sshInfo are required"
+		return &responseBody
+	}
+	if strings.Contains(newName, "/") || strings.Contains(newName, "\\") {
+		responseBody.Msg = "newName is invalid"
+		return &responseBody
+	}
+
+	sshClient, err := core.DecodedMsgToSSHClient(sshInfo)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	if err := sshClient.CreateSftp(); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	defer sshClient.Close()
+
+	srcDir := path.Dir(srcPath)
+	if srcDir == "." {
+		srcDir = "/"
+	}
+	dstPath := path.Join(srcDir, newName)
+	if path.Clean(srcPath) == path.Clean(dstPath) {
+		return &responseBody
+	}
+	if _, err := sshClient.Sftp.Stat(dstPath); err == nil {
+		responseBody.Msg = fmt.Sprintf("target already exists: %s", dstPath)
+		return &responseBody
+	}
+	if err := sshClient.Sftp.Rename(srcPath, dstPath); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	responseBody.Data = gin.H{
+		"path": dstPath,
 	}
 	return &responseBody
 }

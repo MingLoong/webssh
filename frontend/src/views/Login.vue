@@ -5,12 +5,12 @@
       <el-form :model="sshInfo" label-position="top">
         <el-row :gutter="12">
           <el-col :xs="24" :sm="12">
-            <el-form-item label="Hostname">
+            <el-form-item label="主机地址">
               <el-input ref="hostnameInput" v-model="sshInfo.hostname" placeholder="服务器地址" />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
-            <el-form-item label="Port">
+            <el-form-item label="端口">
               <el-input v-model.number="sshInfo.port" placeholder="默认 22" />
             </el-form-item>
           </el-col>
@@ -18,12 +18,12 @@
 
         <el-row :gutter="12">
           <el-col :xs="24" :sm="12">
-            <el-form-item label="Username">
+            <el-form-item label="用户名">
               <el-input ref="usernameInput" v-model="sshInfo.username" placeholder="用户名" />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
-            <el-form-item label="Password">
+            <el-form-item label="密码">
               <el-input
                 ref="passwordInput"
                 v-model="sshInfo.password"
@@ -37,7 +37,7 @@
 
         <el-row :gutter="12">
           <el-col :xs="24" :sm="12">
-            <el-form-item label="Private Key">
+            <el-form-item label="私钥">
               <el-upload
                 class="upload-key"
                 :show-file-list="false"
@@ -50,13 +50,13 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
-            <el-form-item label="Passphrase">
+            <el-form-item label="私钥口令">
               <el-input v-model="sshInfo.passphrase" placeholder="可选" />
             </el-form-item>
           </el-col>
         </el-row>
 
-        <el-form-item label="Initial Command">
+        <el-form-item label="初始命令">
           <el-input v-model="sshInfo.command" placeholder="登录后执行，留空则不执行" />
         </el-form-item>
 
@@ -273,6 +273,7 @@ export default {
   font-size: 24px;
   font-weight: 600;
   color: #111827;
+  text-align: center;
 }
 
 .upload-key {

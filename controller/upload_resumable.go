@@ -43,6 +43,13 @@ var uploadStore = &resumableStore{
 	fileIDByKey: make(map[string]string),
 }
 
+var cleanupOnce sync.Once
+
+const (
+	resumableExpireAfter = 24 * time.Hour
+	resumableCleanupTick = 30 * time.Minute
+)
+
 func resumableBaseDir() string {
 	return filepath.Join(os.TempDir(), "webssh-upload-chunks")
 }
@@ -78,6 +85,30 @@ func removeSession(fileID string) {
 	delete(uploadStore.byID, fileID)
 }
 
+func startResumableCleaner() {
+	cleanupOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(resumableCleanupTick)
+			defer ticker.Stop()
+			for range ticker.C {
+				now := time.Now()
+				var expired []string
+				uploadStore.mu.RLock()
+				for id, s := range uploadStore.byID {
+					if now.Sub(s.UpdatedAt) >= resumableExpireAfter {
+						expired = append(expired, id)
+					}
+				}
+				uploadStore.mu.RUnlock()
+				for _, id := range expired {
+					removeSession(id)
+					_ = os.RemoveAll(resumableSessionDir(id))
+				}
+			}
+		}()
+	})
+}
+
 type uploadInitReq struct {
 	ClientKey   string `json:"clientKey" form:"clientKey"`
 	SSHInfo     string `json:"sshInfo" form:"sshInfo"`
@@ -93,6 +124,7 @@ type uploadInitReq struct {
 func UploadInit(c *gin.Context) *ResponseBody {
 	responseBody := ResponseBody{Msg: "success"}
 	defer TimeCost(time.Now(), &responseBody)
+	startResumableCleaner()
 
 	var req uploadInitReq
 	if err := c.ShouldBind(&req); err != nil {
@@ -165,6 +197,33 @@ func UploadInit(c *gin.Context) *ResponseBody {
 		"uploadedChunks": []int{},
 		"totalChunks":   req.TotalChunks,
 	}
+	return &responseBody
+}
+
+// UploadAbort cancels an upload session and deletes all temporary chunks.
+func UploadAbort(c *gin.Context) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	fileID := strings.TrimSpace(c.DefaultPostForm("fileId", c.Query("fileId")))
+	clientKey := strings.TrimSpace(c.DefaultPostForm("clientKey", c.Query("clientKey")))
+	if fileID == "" && clientKey == "" {
+		responseBody.Msg = "fileId or clientKey is required"
+		return &responseBody
+	}
+
+	if fileID == "" && clientKey != "" {
+		uploadStore.mu.RLock()
+		fileID = uploadStore.fileIDByKey[clientKey]
+		uploadStore.mu.RUnlock()
+	}
+	if fileID == "" {
+		// Already cleaned or not found; keep idempotent behavior.
+		return &responseBody
+	}
+
+	removeSession(fileID)
+	_ = os.RemoveAll(resumableSessionDir(fileID))
 	return &responseBody
 }
 

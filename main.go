@@ -120,6 +120,12 @@ func main() {
 		file.POST("/paste", func(c *gin.Context) {
 			c.JSON(200, controller.PasteFileOrDir(c))
 		})
+		file.POST("/move", func(c *gin.Context) {
+			c.JSON(200, controller.MoveFileOrDir(c))
+		})
+		file.POST("/rename", func(c *gin.Context) {
+			c.JSON(200, controller.RenameFileOrDir(c))
+		})
 		file.POST("/delete", func(c *gin.Context) {
 			c.JSON(200, controller.DeleteFileOrDir(c))
 		})

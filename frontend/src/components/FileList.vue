@@ -71,7 +71,7 @@
         </template>
       </el-table-column>
       <el-table-column :label="$t('Size')" prop="Size" width="90" :resizable="true"></el-table-column>
-      <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" width="160" sortable show-overflow-tooltip :resizable="true"></el-table-column>
+      <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" min-width="160" sortable show-overflow-tooltip :resizable="true"></el-table-column>
     </el-table>
 
     <div v-if="isPanelDragOver" class="drop-mask">

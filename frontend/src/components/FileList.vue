@@ -148,7 +148,7 @@ export default {
       uploadRequestQueue: [],
       activeUploadCount: 0,
       maxConcurrentUploads: 2,
-      successKeepLimit: 200,
+      successKeepLimit: 50,
       refreshTimer: null
     }
   },
@@ -208,12 +208,12 @@ export default {
     }
   },
   methods: {
-    createUploadTask (file, dir = '', uid = '') {
+    createUploadTask (file, dir = '', uid = '', keepFileRef = false) {
       const fullName = dir ? `${dir}/${file.name}` : file.name
       const task = {
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         uid,
-        file,
+        file: keepFileRef ? file : null,
         dir,
         fullName,
         status: 'queued',
@@ -443,7 +443,7 @@ export default {
         this.uploadRequestQueue.push({
           file,
           dir,
-          task: task || this.createUploadTask(file, dir),
+          task: task || this.createUploadTask(file, dir, '', false),
           resolve
         })
         this.processUploadQueue()
@@ -484,7 +484,7 @@ export default {
         : (file.webkitRelativePath ? file.webkitRelativePath.substring(0, file.webkitRelativePath.lastIndexOf('/')) : '')
       let task = option.task || this.getUploadTaskByUid(file.uid)
       if (!task) {
-        task = this.createUploadTask(file, dirPath, file.uid || '')
+        task = this.createUploadTask(file, dirPath, file.uid || '', false)
       }
       task.status = 'uploading'
 
@@ -514,6 +514,9 @@ export default {
         if (result.Msg !== 'success') {
           task.status = 'failed'
           task.message = result.Msg || '未知错误'
+          // Keep file ref only for failed tasks so retry can work.
+          task.file = file
+          task.dir = dirPath
           if (option.onError) option.onError(new Error(task.message), file)
           if (option.resolve) option.resolve(false)
           return
@@ -531,6 +534,9 @@ export default {
       } catch (err) {
         task.status = 'failed'
         task.message = '网络或服务异常'
+        // Keep file ref only for failed tasks so retry can work.
+        task.file = file
+        task.dir = dirPath
         if (option.onError) option.onError(err, file)
         if (option.resolve) option.resolve(false)
       }
@@ -582,7 +588,7 @@ export default {
       const dirPath = file.webkitRelativePath
       this.uploadData.dir = dirPath ? dirPath.substring(0, dirPath.lastIndexOf('/')) : ''
       if (!this.getUploadTaskByUid(file.uid)) {
-        this.createUploadTask(file, this.uploadData.dir || '', file.uid)
+        this.createUploadTask(file, this.uploadData.dir || '', file.uid, false)
       }
       return true
     },

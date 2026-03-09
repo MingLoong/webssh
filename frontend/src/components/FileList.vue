@@ -25,7 +25,7 @@
             </el-upload>
         </el-dialog>
         
-        <el-table :data="fileList" class="file-table" @row-click="rowClick" height="100%" stripe border>
+        <el-table :data="fileList" class="file-table" @row-click="rowClick" @header-dragend="onHeaderDragEnd" height="100%" stripe border>
             <el-table-column
                 :label="$t('Name')"
                 width="260"
@@ -168,6 +168,12 @@ export default {
         nameSort(a, b) {
             return a.Name > b.Name
         },
+        onHeaderDragEnd(newWidth, oldWidth) {
+            const delta = Number(newWidth) - Number(oldWidth)
+            if (Number.isFinite(delta) && delta !== 0) {
+                this.$emit('adjust-width', delta)
+            }
+        },
         rowClick(row) {
             if (row.IsDir) {
                 // Folder handling
@@ -237,8 +243,11 @@ export default {
     display: flex;
     flex-direction: column;
     height: 100%;
+    width: 100%;
+    min-width: 0;
     padding-top: 10px;
     box-sizing: border-box;
+    background: #fff;
 
     .sftp-title {
         font-size: 16px;

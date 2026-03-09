@@ -80,7 +80,7 @@
 
     <div v-if="uploadTasks.length" class="task-panel">
       <div class="task-panel-header">
-        <span>上传任务（等待 {{ queuedCount }}，上传中 {{ uploadingCount }}）</span>
+        <span>上传任务（等待 {{ queuedCount }}，上传中 {{ uploadingCount }}，成功 {{ successCount }}）</span>
         <div class="task-panel-actions">
           <span class="concurrency-label">并发</span>
           <el-button-group class="concurrency-group">
@@ -88,6 +88,14 @@
             <el-button size="mini" class="concurrency-value" @click="resetConcurrent">{{ maxConcurrentUploads }}</el-button>
             <el-button size="mini" icon="el-icon-plus" @click="incrementConcurrent" />
           </el-button-group>
+          <span class="concurrency-label">成功保留</span>
+          <el-input-number
+            v-model="successKeepLimit"
+            :min="0"
+            :max="5000"
+            size="mini"
+            controls-position="right"
+          />
           <el-button type="text" @click="retryAllFailedTasks">重试失败</el-button>
           <el-button type="text" @click="clearFinishedTasks">清理已完成</el-button>
         </div>
@@ -141,6 +149,7 @@ export default {
       uploadRequestQueue: [],
       activeUploadCount: 0,
       maxConcurrentUploads: 2,
+      successKeepLimit: 200,
       refreshTimer: null
     }
   },
@@ -171,6 +180,9 @@ export default {
     },
     uploadingCount () {
       return this.uploadTasks.filter(v => v.status === 'uploading').length
+    },
+    successCount () {
+      return this.uploadTasks.filter(v => v.status === 'success').length
     }
   },
   watch: {
@@ -185,6 +197,9 @@ export default {
     },
     maxConcurrentUploads () {
       this.processUploadQueue()
+    },
+    successKeepLimit () {
+      this.pruneSuccessTasks()
     }
   },
   beforeDestroy () {
@@ -259,6 +274,15 @@ export default {
     },
     clearFinishedTasks () {
       this.uploadTasks = this.uploadTasks.filter(v => v.status === 'uploading' || v.status === 'queued')
+    },
+    pruneSuccessTasks () {
+      const keep = Math.max(0, Number(this.successKeepLimit) || 0)
+      const successTasks = this.uploadTasks.filter(v => v.status === 'success')
+      if (successTasks.length <= keep) {
+        return
+      }
+      const keepIds = new Set(successTasks.slice(-keep).map(v => v.id))
+      this.uploadTasks = this.uploadTasks.filter(v => v.status !== 'success' || keepIds.has(v.id))
     },
     handlePanelDragEnter () {
       this.panelDragCounter += 1
@@ -493,6 +517,7 @@ export default {
         // Release large Blob/File references after successful upload.
         task.file = null
         task.dir = ''
+        this.pruneSuccessTasks()
         if (option.onSuccess) option.onSuccess(result, file)
         if (option.resolve) option.resolve(true)
         this.scheduleFileListRefresh()
@@ -563,6 +588,7 @@ export default {
           task.message = ''
           task.file = null
           task.dir = ''
+          this.pruneSuccessTasks()
         } else {
           task.status = 'failed'
           task.message = (r && r.Msg) || '上传失败'

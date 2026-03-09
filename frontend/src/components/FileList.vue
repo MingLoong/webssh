@@ -327,16 +327,11 @@ export default {
         task: this.createUploadTask(item.file, item.dir || '')
       }))
 
-      const results = await Promise.all(
-        queue.map(item => this.enqueueTaskUpload(item.file, item.dir || '', item.task))
-      )
-      const successCount = results.filter(Boolean).length
-
-      if (successCount > 0) {
-        this.$message.success(`上传完成：${successCount} 个文件`)
-        this.getFileList()
+      for (const item of queue) {
+        this.enqueueTaskUpload(item.file, item.dir || '', item.task)
       }
-      return { successCount, totalCount: entries.length }
+      this.$message.success(`已加入上传队列：${queue.length} 个文件`)
+      return { successCount: queue.length, totalCount: entries.length }
     },
     async collectDroppedEntries (dataTransfer) {
       const items = Array.from(dataTransfer && dataTransfer.items ? dataTransfer.items : [])
@@ -495,6 +490,9 @@ export default {
         task.status = 'success'
         task.progress = 100
         task.message = ''
+        // Release large Blob/File references after successful upload.
+        task.file = null
+        task.dir = ''
         if (option.onSuccess) option.onSuccess(result, file)
         if (option.resolve) option.resolve(true)
         this.scheduleFileListRefresh()
@@ -563,6 +561,8 @@ export default {
           task.status = 'success'
           task.progress = 100
           task.message = ''
+          task.file = null
+          task.dir = ''
         } else {
           task.status = 'failed'
           task.message = (r && r.Msg) || '上传失败'

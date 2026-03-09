@@ -48,3 +48,12 @@ export function fileChmod(path, mode, sshInfo) {
     data.append('sshInfo', sshInfo)
     return request.post('/file/chmod', data)
 }
+
+export function fileChown(path, owner, group, sshInfo) {
+    const data = new URLSearchParams()
+    data.append('path', path)
+    data.append('owner', owner)
+    data.append('group', group)
+    data.append('sshInfo', sshInfo)
+    return request.post('/file/chown', data)
+}

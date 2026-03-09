@@ -282,10 +282,8 @@ export default {
 
     .file-table {
         flex-grow: 1;
+        min-height: 0;
         width: 100%;
-        & .el-table__body-wrapper {
-            height: calc(100% - 40px) !important; /* Adjust based on header height */
-        }
 
         &.el-table th {
             height: 44px;
@@ -323,6 +321,13 @@ export default {
             display: inline-block;
             min-width: 0;
             flex: 1;
+        }
+
+        .el-table,
+        .el-table__header-wrapper,
+        .el-table__body-wrapper,
+        .el-table__empty-block {
+            background: #fff;
         }
     }
 }

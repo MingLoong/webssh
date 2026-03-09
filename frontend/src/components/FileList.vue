@@ -119,6 +119,7 @@ export default {
       progressPercent: 0,
       initialRedirectDone: false,
       homePath: '',
+      uploadMode: 'file',
       isPanelDragOver: false,
       isDialogDragOver: false,
       panelDragCounter: 0,
@@ -223,13 +224,31 @@ export default {
     async handleDialogDrop (e) {
       this.dialogDragCounter = 0
       this.isDialogDragOver = false
-      await this.uploadFromDataTransfer(e.dataTransfer)
+      const result = await this.uploadFromDataTransfer(e.dataTransfer, {
+        mode: this.uploadMode,
+        strictMode: true
+      })
+      if (result.successCount > 0) {
+        this.uploadVisible = false
+      }
     },
-    async uploadFromDataTransfer (dataTransfer) {
+    async uploadFromDataTransfer (dataTransfer, options = {}) {
+      const mode = options.mode || 'both'
+      const strictMode = Boolean(options.strictMode)
       const entries = await this.collectDroppedEntries(dataTransfer)
       if (!entries.length) {
         this.$message.warning('未检测到可上传的文件或文件夹')
-        return
+        return { successCount: 0, totalCount: 0 }
+      }
+
+      const hasFolder = entries.some(v => v.dir && v.dir.length > 0)
+      if (strictMode && mode === 'file' && hasFolder) {
+        this.$message.warning('当前是“上传文件”，请拖入文件；如需拖入文件夹请选择“上传文件夹”。')
+        return { successCount: 0, totalCount: entries.length }
+      }
+      if (strictMode && mode === 'folder' && !hasFolder) {
+        this.$message.warning('当前是“上传文件夹”，请拖入文件夹；如需拖入文件请选择“上传文件”。')
+        return { successCount: 0, totalCount: entries.length }
       }
 
       let successCount = 0
@@ -244,6 +263,7 @@ export default {
         this.$message.success(`上传完成：${successCount} 个文件`)
         this.getFileList()
       }
+      return { successCount, totalCount: entries.length }
     },
     async collectDroppedEntries (dataTransfer) {
       const items = Array.from(dataTransfer && dataTransfer.items ? dataTransfer.items : [])
@@ -370,6 +390,7 @@ export default {
       this.uploadVisible = true
     },
     handleUploadCommand (cmd) {
+      this.uploadMode = cmd === 'folder' ? 'folder' : 'file'
       if (cmd === 'folder') {
         this.selectTip = 'clickSelectFolder'
         this.titleTip = 'uploadFolder'

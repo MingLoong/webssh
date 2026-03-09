@@ -1,10 +1,13 @@
 package controller
 
 import (
+	"archive/zip"
 	"bufio"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -185,17 +188,94 @@ func DownloadFile(c *gin.Context) *ResponseBody {
 		return &responseBody
 	}
 	defer sshClient.Close()
+
+	fileStat, err := sshClient.Sftp.Stat(path)
+	if err != nil {
+		fmt.Println(err)
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	if fileStat.IsDir() {
+		if err := streamSftpDirAsZip(c, sshClient.Sftp, path); err != nil {
+			fmt.Println(err)
+			responseBody.Msg = err.Error()
+		}
+		return &responseBody
+	}
 	if sftpFile, err := sshClient.Download(path); err != nil {
 		fmt.Println(err)
 		responseBody.Msg = err.Error()
 	} else {
 		defer sftpFile.Close()
+		c.Header("Content-Type", "application/octet-stream")
+		fileName := pathBaseOrDefault(path, "download")
+		c.Header("Content-Disposition", buildAttachmentHeader(fileName))
 		c.Writer.WriteHeader(http.StatusOK)
-		fileMeta := strings.Split(path, "/")
-		c.Header("Content-Disposition", "attachment; filename="+fileMeta[len(fileMeta)-1])
 		_, _ = io.Copy(c.Writer, sftpFile)
 	}
 	return &responseBody
+}
+
+func pathBaseOrDefault(p string, fallback string) string {
+	base := path.Base(strings.TrimSpace(p))
+	if base == "" || base == "." || base == "/" {
+		return fallback
+	}
+	return base
+}
+
+func buildAttachmentHeader(fileName string) string {
+	escaped := url.QueryEscape(fileName)
+	return fmt.Sprintf("attachment; filename*=UTF-8''%s", escaped)
+}
+
+func streamSftpDirAsZip(c *gin.Context, sftpClient *sftp.Client, dirPath string) error {
+	rootName := pathBaseOrDefault(dirPath, "download")
+	zipName := rootName + ".zip"
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", buildAttachmentHeader(zipName))
+	c.Writer.WriteHeader(http.StatusOK)
+
+	zw := zip.NewWriter(c.Writer)
+	defer zw.Close()
+	return addSftpDirToZip(sftpClient, zw, dirPath, rootName)
+}
+
+func addSftpDirToZip(sftpClient *sftp.Client, zw *zip.Writer, dirPath string, zipPrefix string) error {
+	children, err := sftpClient.ReadDir(dirPath)
+	if err != nil {
+		return err
+	}
+	// Keep empty directory in zip.
+	if len(children) == 0 {
+		_, err = zw.Create(zipPrefix + "/")
+		return err
+	}
+	for _, child := range children {
+		remoteChildPath := path.Join(dirPath, child.Name())
+		zipChildPath := path.Join(zipPrefix, child.Name())
+		if child.IsDir() {
+			if err := addSftpDirToZip(sftpClient, zw, remoteChildPath, zipChildPath); err != nil {
+				return err
+			}
+			continue
+		}
+		rc, err := sftpClient.Open(remoteChildPath)
+		if err != nil {
+			return err
+		}
+		wc, err := zw.Create(zipChildPath)
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		if _, err := io.Copy(wc, rc); err != nil {
+			rc.Close()
+			return err
+		}
+		rc.Close()
+	}
+	return nil
 }
 
 // UploadProgressWs 获取上传进度ws

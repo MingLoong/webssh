@@ -50,6 +50,7 @@ export default {
       ssh: null,
       savePass: false,
       fontSize: 15,
+      fitAddon: null,
       isSftpVisible: false,
       sftpWidth: 350,
       minSftpWidth: 260,
@@ -72,6 +73,7 @@ export default {
       if (this.windowWidth > 768) {
         this.sftpWidth = Math.min(this.sftpWidth, this.getSftpMaxWidth())
       }
+      this.syncTermSize()
     },
     getSftpMaxWidth () {
       const container = document.querySelector('.terminal-page-container')
@@ -100,6 +102,7 @@ export default {
       const delta = this.resizeStartX - e.clientX
       const nextWidth = this.resizeStartWidth + delta
       this.sftpWidth = Math.min(maxWidth, Math.max(this.minSftpWidth, nextWidth))
+      this.syncTermSize()
     },
     stopResizeSftp () {
       if (!this.isResizingSftp) {
@@ -121,6 +124,21 @@ export default {
       const maxWidth = this.getSftpMaxWidth()
       const nextWidth = this.sftpWidth + delta
       this.sftpWidth = Math.min(maxWidth, Math.max(this.minSftpWidth, nextWidth))
+      this.syncTermSize()
+    },
+    syncTermSize () {
+      this.$nextTick(() => {
+        if (this.fitAddon && this.term) {
+          try {
+            this.fitAddon.fit()
+          } catch (e) {
+            console.warn('xterm fit failed on panel resize:', e)
+          }
+        }
+        if (this.ws && this.ws.readyState === 1 && this.term) {
+          this.ws.send(`resize:${this.term.rows}:${this.term.cols}`)
+        }
+      })
     },
     setSSH () {
       this.$store.commit('SET_SSH', this.ssh)
@@ -142,7 +160,8 @@ export default {
       const sshReq = this.$store.getters.sshReq
       this.close()
       const prefix = process.env.NODE_ENV === 'production' ? '' : '/api'
-      const fitAddon = new FitAddon()
+      this.fitAddon = new FitAddon()
+      const fitAddon = this.fitAddon
 
       this.term = new Terminal({
         cursorBlink: true,
@@ -392,6 +411,7 @@ export default {
   display: flex;
   flex-direction: column;
   background-color: black;
+  overflow: hidden;
 }
 
 #xterm-container {
@@ -428,6 +448,8 @@ export default {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+  z-index: 2;
 }
 
 .terminal-footer {

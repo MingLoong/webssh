@@ -24,3 +24,19 @@ export function filePaste(srcPath, dstPath, sshInfo) {
     data.append('sshInfo', sshInfo)
     return request.post('/file/paste', data)
 }
+
+export function fileMove(srcPath, dstPath, sshInfo) {
+    const data = new URLSearchParams()
+    data.append('srcPath', srcPath)
+    data.append('dstPath', dstPath)
+    data.append('sshInfo', sshInfo)
+    return request.post('/file/move', data)
+}
+
+export function fileRename(srcPath, newName, sshInfo) {
+    const data = new URLSearchParams()
+    data.append('srcPath', srcPath)
+    data.append('newName', newName)
+    data.append('sshInfo', sshInfo)
+    return request.post('/file/rename', data)
+}

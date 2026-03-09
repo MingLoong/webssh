@@ -123,7 +123,7 @@
         <el-input v-model.trim="chmodDialog.group" placeholder="所属用户组（组名或GID）"></el-input>
       </div>
       <div class="chmod-grid" :class="{ disabled: !chmodDialog.applyMode }">
-        <div class="field-caption">勾选权限位</div>
+        <div class="field-caption perm-caption">勾选权限位</div>
         <div class="chmod-row">
           <span class="chmod-label">所有者</span>
           <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.owner.r" @change="onChmodBitsChange"> 读</label>
@@ -1303,6 +1303,10 @@ export default {
   font-size: 12px;
   color: #6b7280;
   line-height: 1.2;
+}
+
+.perm-caption {
+  margin-bottom: 8px;
 }
 
 .chmod-row {

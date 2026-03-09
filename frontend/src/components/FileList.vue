@@ -1,56 +1,103 @@
 <template>
-    <div
-        class="file-list-wrapper"
-        @dragenter.prevent="handleDragEnter"
-        @dragover.prevent="handleDragOver"
-        @dragleave.prevent="handleDragLeave"
-        @drop.prevent="handleDrop"
-    >
-        <div class="sftp-title">SFTP文件管理</div>
-        <div class="file-header">
-            <el-input class="path-input" v-model="currentPath" size="small" @keyup.enter.native="getFileList()" @blur="getFileList" placeholder="当前路径..."></el-input>
-            <el-button-group>
-                <el-button type="primary" size="small" icon="el-icon-s-home" @click="goToHome()" title="主目录"></el-button>
-                <el-button type="primary" size="small" icon="el-icon-arrow-up" @click="upDirectory()" title="返回上级目录"></el-button>
-                <el-button type="primary" size="small" icon="el-icon-refresh" @click="getFileList()" title="刷新当前目录"></el-button>
-                <el-dropdown @click="openUploadDialog()" @command="handleUploadCommand" size="small">
-                    <el-button type="primary" size="small" icon="el-icon-upload"></el-button>
-                    <el-dropdown-menu slot="dropdown">
-                        <el-dropdown-item command="file">{{ $t('uploadFile') }}</el-dropdown-item>
-                        <el-dropdown-item command="folder">{{ $t('uploadFolder') }}</el-dropdown-item>
-                    </el-dropdown-menu>
-                </el-dropdown>
-            </el-button-group>
-        </div>
-
-        <el-dialog custom-class="uploadContainer" :title="$t(this.titleTip)" :visible.sync="uploadVisible" append-to-body width="32%">
-            <el-upload ref="upload" multiple drag :action="uploadUrl" :data="uploadData" :before-upload="beforeUpload" :on-progress="uploadProgress" :on-success="uploadSuccess">
-                <i class="el-icon-upload"></i>
-                <div class="el-upload__text">{{ $t(this.selectTip) }}</div>
-                <div class="el-upload__tip" slot="tip">{{ this.uploadTip }}</div>
-            </el-upload>
-        </el-dialog>
-        
-        <el-table :data="fileList" class="file-table" @row-click="rowClick" height="100%" stripe border>
-            <el-table-column
-                :label="$t('Name')"
-                width="260"
-                :resizable="true"
-                sortable :sort-method="nameSort">
-                <template slot-scope="scope">
-                    <div class="name-cell" :class="{ 'is-dir': scope.row.IsDir }" :title="scope.row.Name">
-                        <i :class="scope.row.IsDir ? 'el-icon-folder' : 'el-icon-document'"></i>
-                        <span class="name-text">{{ scope.row.Name }}</span>
-                    </div>
-                </template>
-            </el-table-column>
-            <el-table-column :label="$t('Size')" prop="Size" width="90" :resizable="true"></el-table-column>
-            <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" width="160" sortable show-overflow-tooltip :resizable="true"></el-table-column>
-        </el-table>
-        <div v-if="isDragOver" class="drop-mask">
-            <div class="drop-mask-content">拖拽文件到这里上传到当前目录</div>
-        </div>
+  <div
+    class="file-list-wrapper"
+    @dragenter.prevent="handlePanelDragEnter"
+    @dragover.prevent="handlePanelDragOver"
+    @dragleave.prevent="handlePanelDragLeave"
+    @drop.prevent="handlePanelDrop"
+  >
+    <div class="sftp-title">SFTP文件管理</div>
+    <div class="file-header">
+      <el-input
+        class="path-input"
+        v-model="currentPath"
+        size="small"
+        @keyup.enter.native="getFileList()"
+        @blur="getFileList"
+        placeholder="当前路径..."
+      ></el-input>
+      <el-button-group>
+        <el-button type="primary" size="small" icon="el-icon-s-home" @click="goToHome" title="主目录"></el-button>
+        <el-button type="primary" size="small" icon="el-icon-arrow-up" @click="upDirectory" title="返回上级目录"></el-button>
+        <el-button type="primary" size="small" icon="el-icon-refresh" @click="getFileList" title="刷新当前目录"></el-button>
+        <el-dropdown @click="openUploadDialog" @command="handleUploadCommand" size="small">
+          <el-button type="primary" size="small" icon="el-icon-upload"></el-button>
+          <el-dropdown-menu slot="dropdown">
+            <el-dropdown-item command="file">{{ $t('uploadFile') }}</el-dropdown-item>
+            <el-dropdown-item command="folder">{{ $t('uploadFolder') }}</el-dropdown-item>
+          </el-dropdown-menu>
+        </el-dropdown>
+      </el-button-group>
     </div>
+
+    <el-dialog custom-class="uploadContainer" :title="$t(titleTip)" :visible.sync="uploadVisible" append-to-body width="32%">
+      <div
+        class="dialog-drop-zone"
+        @dragenter.prevent="handleDialogDragEnter"
+        @dragover.prevent="handleDialogDragOver"
+        @dragleave.prevent="handleDialogDragLeave"
+        @drop.prevent="handleDialogDrop"
+      >
+        <el-upload
+          ref="upload"
+          multiple
+          drag
+          :action="uploadUrl"
+          :data="uploadData"
+          :before-upload="beforeUpload"
+          :on-progress="uploadProgress"
+          :on-error="uploadError"
+          :on-success="uploadSuccess"
+        >
+          <i class="el-icon-upload"></i>
+          <div class="el-upload__text">{{ $t(selectTip) }}</div>
+          <div class="el-upload__tip" slot="tip">{{ uploadTip }}</div>
+        </el-upload>
+
+        <div v-if="isDialogDragOver" class="drop-mask dialog-mask">
+          <div class="drop-mask-content">拖拽文件或文件夹到这里上传</div>
+        </div>
+      </div>
+    </el-dialog>
+
+    <el-table :data="fileList" class="file-table" @row-click="rowClick" height="100%" stripe border>
+      <el-table-column :label="$t('Name')" width="260" :resizable="true" sortable :sort-method="nameSort">
+        <template slot-scope="scope">
+          <div class="name-cell" :class="{ 'is-dir': scope.row.IsDir }" :title="scope.row.Name">
+            <i :class="scope.row.IsDir ? 'el-icon-folder' : 'el-icon-document'"></i>
+            <span class="name-text">{{ scope.row.Name }}</span>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column :label="$t('Size')" prop="Size" width="90" :resizable="true"></el-table-column>
+      <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" width="160" sortable show-overflow-tooltip :resizable="true"></el-table-column>
+    </el-table>
+
+    <div v-if="isPanelDragOver" class="drop-mask">
+      <div class="drop-mask-content">拖拽文件或文件夹到这里上传到当前目录</div>
+    </div>
+
+    <div v-if="uploadTasks.length" class="task-panel">
+      <div class="task-panel-header">
+        <span>上传任务</span>
+        <el-button type="text" @click="clearFinishedTasks">清理已完成</el-button>
+      </div>
+      <div class="task-list">
+        <div class="task-item" v-for="task in taskDisplayList" :key="task.id">
+          <div class="task-meta">
+            <span class="task-name" :title="task.fullName">{{ task.fullName }}</span>
+            <span class="task-status" :class="`is-${task.status}`">{{ taskStatusText(task.status) }}</span>
+          </div>
+          <el-progress
+            :percentage="task.progress"
+            :stroke-width="6"
+            :status="task.status === 'failed' ? 'exception' : (task.status === 'success' ? 'success' : '')"
+          />
+          <div v-if="task.status === 'failed' && task.message" class="task-error">{{ task.message }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
@@ -59,369 +106,608 @@ import request from '@/utils/request'
 import { mapState } from 'vuex'
 
 export default {
-    name: 'FileList',
-    data() {
-        return {
-            uploadVisible: false,
-            fileList: [],
-            downloadFilePath: '',
-            currentPath: '/',
-            selectTip: 'clickSelectFile',
-            titleTip: 'uploadFile',
-            uploadTip: '',
-            progressPercent: 0,
-            initialRedirectDone: false,
-            homePath: '',
-            isDragOver: false,
-            dragCounter: 0
-        }
-    },
-    mounted() {
-        // 组件挂载时，currentPath 为空或/，自动拉取
-        if (!this.currentPath || this.currentPath === '/') {
-            this.getFileList()
-        }
-    },
-    computed: {
-        ...mapState(['currentTab']), // currentTab may be deprecated but keeping for now
-        sshInfoReady() {
-            return this.$store.state.sshInfo && this.$store.state.sshInfo.hostname;
-        },
-        uploadUrl: () => {
-            return `${process.env.NODE_ENV === 'production' ? `${location.origin}` : 'api'}/file/upload`
-        },
-        uploadData: function() {
-            return {
-                sshInfo: this.$store.getters.sshReq,
-                path: this.currentPath
-            }
-        }
-    },
-    watch: {
-        // Watch for sshInfo to become available
-        sshInfoReady(newValue, oldValue) {
-            if (newValue && !oldValue) {
-                this.getFileList();
-            }
-        },
-        currentTab: function() {
-            // This logic might need adjustment if multi-tab is re-enabled
-            this.fileList = []
-            this.currentPath = this.currentTab && this.currentTab.path ? this.currentTab.path : '/';
-        }
-    },
-    methods: {
-        handleDragEnter() {
-            this.dragCounter += 1
-            this.isDragOver = true
-        },
-        handleDragOver() {
-            this.isDragOver = true
-        },
-        handleDragLeave() {
-            this.dragCounter = Math.max(0, this.dragCounter - 1)
-            if (this.dragCounter === 0) {
-                this.isDragOver = false
-            }
-        },
-        async handleDrop(e) {
-            this.dragCounter = 0
-            this.isDragOver = false
-            const files = Array.from(e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : [])
-            if (!files.length) {
-                return
-            }
-
-            let successCount = 0
-            for (const file of files) {
-                if (!file || !file.name || (file.size === 0 && !file.type)) {
-                    continue
-                }
-                const ok = await this.uploadDroppedFile(file)
-                if (ok) {
-                    successCount += 1
-                }
-            }
-
-            if (successCount > 0) {
-                this.$message.success(`拖拽上传完成：${successCount} 个文件`)
-                this.getFileList()
-            }
-        },
-        async uploadDroppedFile(file) {
-            const formData = new FormData()
-            formData.append('sshInfo', this.$store.getters.sshReq)
-            formData.append('path', this.currentPath)
-            formData.append('id', `${Date.now()}-${Math.random().toString(16).slice(2)}`)
-            formData.append('file', file, file.name)
-            try {
-                const result = await request.post('/file/upload', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                })
-                if (result.Msg !== 'success') {
-                    this.$message.error(`${file.name} 上传失败: ${result.Msg}`)
-                    return false
-                }
-                return true
-            } catch (err) {
-                this.$message.error(`${file.name} 上传失败`)
-                return false
-            }
-        },
-        goToHome() {
-            if (this.homePath) {
-                if (this.currentPath !== this.homePath) {
-                    this.currentPath = this.homePath;
-                    this.getFileList();
-                }
-            } else {
-                this.$message.warning('主目录信息尚不可用，请刷新重试。');
-            }
-        },
-        openUploadDialog() {
-            this.uploadTip = `${this.$t('uploadPath')}: ${this.currentPath}`
-            this.uploadVisible = true
-        },
-        handleUploadCommand(cmd) {
-            if (cmd === 'folder') {
-                this.selectTip = 'clickSelectFolder'
-                this.titleTip = 'uploadFolder'
-            } else {
-                this.selectTip = 'clickSelectFile'
-                this.titleTip = 'uploadFile'
-            }
-            this.openUploadDialog();
-            const isFolder = 'folder' === cmd,
-                supported = this.webkitdirectorySupported();
-            if (!supported) {
-                isFolder && this.$message.warning('当前浏览器不支持');
-                return;
-            }
-            // Add folder support
-            this.$nextTick(() => {
-                const input = document.getElementsByClassName('el-upload__input')[0];
-                if (input) input.webkitdirectory = isFolder;
-            })
-        },
-        webkitdirectorySupported(){
-            return 'webkitdirectory' in document.createElement('input')
-        },
-        beforeUpload(file) {
-            this.uploadTip = `${this.$t('uploading')} ${file.name} ${this.$t('to')} ${this.currentPath}, ${this.$t('notCloseWindows')}..`
-            this.uploadData.id = file.uid
-            // Is there a folder?
-            const dirPath = file.webkitRelativePath;
-            this.uploadData.dir = dirPath ? dirPath.substring(0, dirPath.lastIndexOf('/')) : '';
-            return true
-        },
-        uploadSuccess(r, file) {
-            this.uploadTip = `${file.name}${this.$t('uploadFinish')}!`
-            this.getFileList();
-        },
-        uploadProgress(e, f) {
-            e.percent = e.percent / 2
-            f.percentage = f.percentage / 2
-            if (e.percent === 50) {
-                const ws = new WebSocket(`${(location.protocol === 'http:' ? 'ws' : 'wss')}://${location.host}${process.env.NODE_ENV === 'production' ? '' : '/ws'}/file/progress?id=${f.uid}`)
-                ws.onmessage = e1 => {
-                    f.percentage = (f.size + Number(e1.data)) / (f.size * 2) * 100
-                }
-                ws.onclose = () => {
-                    console.log(Date(), 'onclose')
-                }
-                ws.onerror = () => {
-                    console.log(Date(), 'onerror')
-                }
-            }
-        },
-        nameSort(a, b) {
-            return a.Name > b.Name
-        },
-        rowClick(row) {
-            if (row.IsDir) {
-                // Folder handling
-                this.currentPath = this.currentPath.charAt(this.currentPath.length - 1) === '/' ? this.currentPath + row.Name : this.currentPath + '/' + row.Name
-                this.getFileList()
-            } else {
-                // File handling
-                this.downloadFilePath = this.currentPath.charAt(this.currentPath.length - 1) === '/' ? this.currentPath + row.Name : this.currentPath + '/' + row.Name
-                this.downloadFile()
-            }
-        },
-        async getFileList() {
-            this.currentPath = this.currentPath.replace(/\\+/g, '/')
-            if (this.currentPath === '') {
-                this.currentPath = '/'
-            }
-            const result = await fileList(this.currentPath, this.$store.getters.sshReq)
-            if (result.Msg === 'success') {
-                if (result.Data.home) {
-                    this.homePath = result.Data.home;
-                }
-                if (result.Data.list === null) {
-                    this.fileList = []
-                } else {
-                    this.fileList = result.Data.list
-                }
-                // 只要后端返回的home和当前路径不同且home不为/，就切换 (仅执行一次)
-                if (!this.initialRedirectDone && result.Data.home && result.Data.home !== '/' && this.currentPath !== result.Data.home) {
-                    this.initialRedirectDone = true
-                    this.currentPath = result.Data.home
-                    await this.getFileList()
-                    return
-                }
-            } else {
-                this.fileList = []
-                this.$message({
-                    message: result.Msg,
-                    type: 'error',
-                    duration: 3000
-                })
-            }
-        },
-        upDirectory() {
-            if (this.currentPath === '/') {
-                return
-            }
-            let pathList = this.currentPath.split('/')
-            if (pathList[pathList.length - 1] === '') {
-                pathList = pathList.slice(0, pathList.length - 2)
-            } else {
-                pathList = pathList.slice(0, pathList.length - 1)
-            }
-            this.currentPath = pathList.length === 1 ? '/' : pathList.join('/')
-            this.getFileList()
-        },
-        downloadFile() {
-            const prefix = process.env.NODE_ENV === 'production' ? `${location.origin}` : 'api'
-            const downloadUrl = `${prefix}/file/download?path=${this.downloadFilePath}&sshInfo=${this.$store.getters.sshReq}`
-            window.open(downloadUrl)
-        }
+  name: 'FileList',
+  data () {
+    return {
+      uploadVisible: false,
+      fileList: [],
+      downloadFilePath: '',
+      currentPath: '/',
+      selectTip: 'clickSelectFile',
+      titleTip: 'uploadFile',
+      uploadTip: '',
+      progressPercent: 0,
+      initialRedirectDone: false,
+      homePath: '',
+      isPanelDragOver: false,
+      isDialogDragOver: false,
+      panelDragCounter: 0,
+      dialogDragCounter: 0,
+      uploadTasks: []
     }
+  },
+  mounted () {
+    if (!this.currentPath || this.currentPath === '/') {
+      this.getFileList()
+    }
+  },
+  computed: {
+    ...mapState(['currentTab']),
+    sshInfoReady () {
+      return this.$store.state.sshInfo && this.$store.state.sshInfo.hostname
+    },
+    uploadUrl: () => {
+      return `${process.env.NODE_ENV === 'production' ? `${location.origin}` : 'api'}/file/upload`
+    },
+    uploadData () {
+      return {
+        sshInfo: this.$store.getters.sshReq,
+        path: this.currentPath
+      }
+    },
+    taskDisplayList () {
+      return this.uploadTasks.slice().reverse().slice(0, 30)
+    }
+  },
+  watch: {
+    sshInfoReady (newValue, oldValue) {
+      if (newValue && !oldValue) {
+        this.getFileList()
+      }
+    },
+    currentTab () {
+      this.fileList = []
+      this.currentPath = this.currentTab && this.currentTab.path ? this.currentTab.path : '/'
+    }
+  },
+  methods: {
+    createUploadTask (file, dir = '', uid = '') {
+      const fullName = dir ? `${dir}/${file.name}` : file.name
+      const task = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        uid,
+        fullName,
+        status: 'uploading',
+        progress: 0,
+        message: ''
+      }
+      this.uploadTasks.push(task)
+      if (this.uploadTasks.length > 300) {
+        this.uploadTasks = this.uploadTasks.slice(this.uploadTasks.length - 300)
+      }
+      return task
+    },
+    getUploadTaskByUid (uid) {
+      return this.uploadTasks.find(v => v.uid === uid)
+    },
+    taskStatusText (status) {
+      if (status === 'uploading') return '上传中'
+      if (status === 'success') return '成功'
+      if (status === 'failed') return '失败'
+      return status
+    },
+    clearFinishedTasks () {
+      this.uploadTasks = this.uploadTasks.filter(v => v.status === 'uploading')
+    },
+    handlePanelDragEnter () {
+      this.panelDragCounter += 1
+      this.isPanelDragOver = true
+    },
+    handlePanelDragOver () {
+      this.isPanelDragOver = true
+    },
+    handlePanelDragLeave () {
+      this.panelDragCounter = Math.max(0, this.panelDragCounter - 1)
+      if (this.panelDragCounter === 0) {
+        this.isPanelDragOver = false
+      }
+    },
+    async handlePanelDrop (e) {
+      this.panelDragCounter = 0
+      this.isPanelDragOver = false
+      await this.uploadFromDataTransfer(e.dataTransfer)
+    },
+    handleDialogDragEnter () {
+      this.dialogDragCounter += 1
+      this.isDialogDragOver = true
+    },
+    handleDialogDragOver () {
+      this.isDialogDragOver = true
+    },
+    handleDialogDragLeave () {
+      this.dialogDragCounter = Math.max(0, this.dialogDragCounter - 1)
+      if (this.dialogDragCounter === 0) {
+        this.isDialogDragOver = false
+      }
+    },
+    async handleDialogDrop (e) {
+      this.dialogDragCounter = 0
+      this.isDialogDragOver = false
+      await this.uploadFromDataTransfer(e.dataTransfer)
+    },
+    async uploadFromDataTransfer (dataTransfer) {
+      const entries = await this.collectDroppedEntries(dataTransfer)
+      if (!entries.length) {
+        this.$message.warning('未检测到可上传的文件或文件夹')
+        return
+      }
+
+      let successCount = 0
+      for (const item of entries) {
+        const ok = await this.uploadDroppedFile(item.file, item.dir || '')
+        if (ok) {
+          successCount += 1
+        }
+      }
+
+      if (successCount > 0) {
+        this.$message.success(`上传完成：${successCount} 个文件`)
+        this.getFileList()
+      }
+    },
+    async collectDroppedEntries (dataTransfer) {
+      const items = Array.from(dataTransfer && dataTransfer.items ? dataTransfer.items : [])
+      const supportsEntry = items.some(v => typeof v.webkitGetAsEntry === 'function')
+
+      if (supportsEntry) {
+        let all = []
+        for (const item of items) {
+          const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null
+          if (!entry) {
+            continue
+          }
+          const children = await this.walkFileTree(entry, '')
+          all = all.concat(children)
+        }
+        return all
+      }
+
+      const files = Array.from(dataTransfer && dataTransfer.files ? dataTransfer.files : [])
+      return files
+        .filter(file => file && file.name)
+        .map(file => {
+          const rel = file.webkitRelativePath || ''
+          const slash = rel.lastIndexOf('/')
+          const dir = slash > 0 ? rel.slice(0, slash) : ''
+          return { file, dir }
+        })
+    },
+    async walkFileTree (entry, parentPath) {
+      if (entry.isFile) {
+        const file = await this.getFileFromEntry(entry)
+        if (!file) {
+          return []
+        }
+        return [{ file, dir: parentPath }]
+      }
+
+      if (!entry.isDirectory) {
+        return []
+      }
+
+      const currentPath = parentPath ? `${parentPath}/${entry.name}` : entry.name
+      const children = await this.readAllEntries(entry)
+      let all = []
+      for (const child of children) {
+        const childList = await this.walkFileTree(child, currentPath)
+        all = all.concat(childList)
+      }
+      return all
+    },
+    getFileFromEntry (entry) {
+      return new Promise(resolve => {
+        entry.file(
+          file => resolve(file),
+          () => resolve(null)
+        )
+      })
+    },
+    readAllEntries (dirEntry) {
+      return new Promise(resolve => {
+        const reader = dirEntry.createReader()
+        const entries = []
+        const readBatch = () => {
+          reader.readEntries(result => {
+            if (!result.length) {
+              resolve(entries)
+              return
+            }
+            entries.push(...result)
+            readBatch()
+          }, () => resolve(entries))
+        }
+        readBatch()
+      })
+    },
+    async uploadDroppedFile (file, dir) {
+      const task = this.createUploadTask(file, dir)
+      const formData = new FormData()
+      formData.append('sshInfo', this.$store.getters.sshReq)
+      formData.append('path', this.currentPath)
+      formData.append('id', `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+      if (dir) {
+        formData.append('dir', dir)
+      }
+      formData.append('file', file, file.name)
+
+      try {
+        const result = await request.post('/file/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (evt) => {
+            if (!evt || !evt.total) return
+            task.progress = Math.max(task.progress, Math.min(99, Math.round((evt.loaded / evt.total) * 100)))
+          }
+        })
+        if (result.Msg !== 'success') {
+          task.status = 'failed'
+          task.message = result.Msg || '未知错误'
+          this.$message.error(`${file.name} 上传失败: ${result.Msg}`)
+          return false
+        }
+        task.status = 'success'
+        task.progress = 100
+        task.message = ''
+        return true
+      } catch (err) {
+        task.status = 'failed'
+        task.message = '网络或服务异常'
+        this.$message.error(`${file.name} 上传失败`)
+        return false
+      }
+    },
+    goToHome () {
+      if (this.homePath) {
+        if (this.currentPath !== this.homePath) {
+          this.currentPath = this.homePath
+          this.getFileList()
+        }
+      } else {
+        this.$message.warning('主目录信息尚不可用，请刷新重试')
+      }
+    },
+    openUploadDialog () {
+      this.uploadTip = `${this.$t('uploadPath')}: ${this.currentPath}`
+      this.uploadVisible = true
+    },
+    handleUploadCommand (cmd) {
+      if (cmd === 'folder') {
+        this.selectTip = 'clickSelectFolder'
+        this.titleTip = 'uploadFolder'
+      } else {
+        this.selectTip = 'clickSelectFile'
+        this.titleTip = 'uploadFile'
+      }
+      this.openUploadDialog()
+
+      const isFolder = cmd === 'folder'
+      const supported = this.webkitdirectorySupported()
+      if (!supported) {
+        if (isFolder) {
+          this.$message.warning('当前浏览器不支持文件夹选择')
+        }
+        return
+      }
+
+      this.$nextTick(() => {
+        const input = document.getElementsByClassName('el-upload__input')[0]
+        if (input) {
+          input.webkitdirectory = isFolder
+        }
+      })
+    },
+    webkitdirectorySupported () {
+      return 'webkitdirectory' in document.createElement('input')
+    },
+    beforeUpload (file) {
+      this.uploadTip = `${this.$t('uploading')} ${file.name} ${this.$t('to')} ${this.currentPath}, ${this.$t('notCloseWindows')}..`
+      this.uploadData.id = file.uid
+      const dirPath = file.webkitRelativePath
+      this.uploadData.dir = dirPath ? dirPath.substring(0, dirPath.lastIndexOf('/')) : ''
+      if (!this.getUploadTaskByUid(file.uid)) {
+        this.createUploadTask(file, this.uploadData.dir || '', file.uid)
+      }
+      return true
+    },
+    uploadSuccess (r, file) {
+      this.uploadTip = `${file.name}${this.$t('uploadFinish')}!`
+      const task = this.getUploadTaskByUid(file.uid)
+      if (task) {
+        if (r && r.Msg === 'success') {
+          task.status = 'success'
+          task.progress = 100
+          task.message = ''
+        } else {
+          task.status = 'failed'
+          task.message = (r && r.Msg) || '上传失败'
+        }
+      }
+      this.getFileList()
+    },
+    uploadError (err, file) {
+      const task = this.getUploadTaskByUid(file && file.uid)
+      if (task) {
+        task.status = 'failed'
+        task.message = '网络或服务异常'
+      }
+    },
+    uploadProgress (e, f) {
+      const task = this.getUploadTaskByUid(f.uid)
+      if (!task) return
+      task.status = 'uploading'
+      task.progress = Math.max(task.progress, Math.min(99, Math.round(e.percent)))
+    },
+    nameSort (a, b) {
+      return a.Name > b.Name
+    },
+    rowClick (row) {
+      if (row.IsDir) {
+        this.currentPath = this.currentPath.charAt(this.currentPath.length - 1) === '/'
+          ? this.currentPath + row.Name
+          : this.currentPath + '/' + row.Name
+        this.getFileList()
+      } else {
+        this.downloadFilePath = this.currentPath.charAt(this.currentPath.length - 1) === '/'
+          ? this.currentPath + row.Name
+          : this.currentPath + '/' + row.Name
+        this.downloadFile()
+      }
+    },
+    async getFileList () {
+      this.currentPath = this.currentPath.replace(/\\+/g, '/')
+      if (this.currentPath === '') {
+        this.currentPath = '/'
+      }
+      const result = await fileList(this.currentPath, this.$store.getters.sshReq)
+      if (result.Msg === 'success') {
+        if (result.Data.home) {
+          this.homePath = result.Data.home
+        }
+        this.fileList = result.Data.list || []
+
+        if (!this.initialRedirectDone && result.Data.home && result.Data.home !== '/' && this.currentPath !== result.Data.home) {
+          this.initialRedirectDone = true
+          this.currentPath = result.Data.home
+          await this.getFileList()
+        }
+      } else {
+        this.fileList = []
+        this.$message({
+          message: result.Msg,
+          type: 'error',
+          duration: 3000
+        })
+      }
+    },
+    upDirectory () {
+      if (this.currentPath === '/') {
+        return
+      }
+      let pathList = this.currentPath.split('/')
+      if (pathList[pathList.length - 1] === '') {
+        pathList = pathList.slice(0, pathList.length - 2)
+      } else {
+        pathList = pathList.slice(0, pathList.length - 1)
+      }
+      this.currentPath = pathList.length === 1 ? '/' : pathList.join('/')
+      this.getFileList()
+    },
+    downloadFile () {
+      const prefix = process.env.NODE_ENV === 'production' ? `${location.origin}` : 'api'
+      const downloadUrl = `${prefix}/file/download?path=${this.downloadFilePath}&sshInfo=${this.$store.getters.sshReq}`
+      window.open(downloadUrl)
+    }
+  }
 }
 </script>
 
 <style lang="scss">
 .file-list-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  padding-top: 10px;
+  box-sizing: border-box;
+  background: #fff;
+  position: relative;
+
+  .sftp-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--text-color);
+    text-align: center;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--input-border);
+    flex-shrink: 0;
+  }
+
+  .file-header {
+    flex-shrink: 0;
+    margin-bottom: 10px;
     display: flex;
-    flex-direction: column;
-    height: 100%;
+    align-items: center;
+  }
+
+  .path-input {
+    flex: 1;
+    padding: 0 5px;
+    margin-right: 2px;
+  }
+
+  .file-header .el-button-group .el-button {
+    padding: 8px;
+    width: 36px;
+    height: 32px;
+    line-height: 1;
+  }
+
+  .file-table {
+    flex-grow: 1;
+    min-height: 0;
     width: 100%;
-    min-width: 0;
-    padding-top: 10px;
-    box-sizing: border-box;
-    background: #fff;
-    position: relative;
 
-    .sftp-title {
-        font-size: 16px;
-        font-weight: bold;
-        color: var(--text-color);
-        text-align: center;
-        padding-bottom: 8px;
-        margin-bottom: 8px;
-        border-bottom: 1px solid var(--input-border);
-        flex-shrink: 0;
+    &.el-table th {
+      height: 44px;
+      padding: 0 6px;
     }
 
-    .file-header {
-        flex-shrink: 0;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
+    &.el-table td {
+      padding: 0 6px;
     }
 
-    .path-input {
-        flex: 1;
-        padding: 0 5px;
-        margin-right: 2px;
+    .cell {
+      padding: 8px 2px;
+      line-height: 20px;
     }
 
-    .file-header .el-button-group .el-button {
-        padding: 8px;
-        width: 36px;
-        height: 32px;
-        line-height: 1;
+    th > .cell {
+      display: flex;
+      align-items: center;
     }
 
-    .file-table {
-        flex-grow: 1;
-        min-height: 0;
-        width: 100%;
-
-        &.el-table th {
-            height: 44px;
-            padding: 0 6px;
-        }
-        &.el-table td {
-            padding: 0 6px;
-        }
-        .cell {
-            padding: 8px 2px;
-            line-height: 20px;
-        }
-        th > .cell {
-            display: flex;
-            align-items: center;
-        }
-
-        .name-cell {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            min-width: 0;
-            cursor: pointer;
-        }
-
-        .name-cell.is-dir {
-            color: #0c60b5;
-            font-weight: 500;
-        }
-
-        .name-text {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            display: inline-block;
-            min-width: 0;
-            flex: 1;
-        }
-
-        .el-table,
-        .el-table__header-wrapper,
-        .el-table__body-wrapper,
-        .el-table__empty-block {
-            background: #fff;
-        }
+    .name-cell {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      cursor: pointer;
     }
+
+    .name-cell.is-dir {
+      color: #0c60b5;
+      font-weight: 500;
+    }
+
+    .name-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: inline-block;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .el-table,
+    .el-table__header-wrapper,
+    .el-table__body-wrapper,
+    .el-table__empty-block {
+      background: #fff;
+    }
+  }
+}
+
+.dialog-drop-zone {
+  position: relative;
 }
 
 .drop-mask {
-    position: absolute;
-    inset: 0;
-    background: rgba(64, 158, 255, 0.12);
-    border: 2px dashed #409eff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 30;
+  position: absolute;
+  inset: 0;
+  background: rgba(64, 158, 255, 0.12);
+  border: 2px dashed #409eff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.dialog-mask {
+  border-radius: 6px;
 }
 
 .drop-mask-content {
-    background: #fff;
-    color: #1f2937;
-    border: 1px solid #bfdbfe;
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: 14px;
-    font-weight: 600;
+  background: #fff;
+  color: #1f2937;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
 }
+
+.task-panel {
+  flex-shrink: 0;
+  border-top: 1px solid #e5e7eb;
+  background: #fafafa;
+  padding: 8px 10px;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.task-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-item {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.task-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  gap: 10px;
+}
+
+.task-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  font-size: 12px;
+  color: #374151;
+}
+
+.task-status {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.task-status.is-uploading {
+  color: #2563eb;
+}
+
+.task-status.is-success {
+  color: #16a34a;
+}
+
+.task-status.is-failed {
+  color: #dc2626;
+}
+
+.task-error {
+  margin-top: 4px;
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
 .uploadContainer {
-    .el-upload {
-        display: flex;
-    }
-    .el-upload-dragger {
-        width: 95%;
-    }
+  .el-upload {
+    display: flex;
+  }
+
+  .el-upload-dragger {
+    width: 95%;
+  }
 }
 </style>

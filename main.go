@@ -129,6 +129,9 @@ func main() {
 		file.POST("/chmod", func(c *gin.Context) {
 			c.JSON(200, controller.ChmodFileOrDir(c))
 		})
+		file.POST("/chown", func(c *gin.Context) {
+			c.JSON(200, controller.ChownFileOrDir(c))
+		})
 		file.POST("/delete", func(c *gin.Context) {
 			c.JSON(200, controller.DeleteFileOrDir(c))
 		})

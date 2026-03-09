@@ -141,6 +141,8 @@ export default {
       uploadRequestQueue: [],
       activeUploadCount: 0,
       maxConcurrentUploads: 2,
+      resumableThreshold: 8 * 1024 * 1024,
+      resumableChunkSize: 5 * 1024 * 1024,
       successKeepLimit: 50,
       successTotalCount: 0,
       refreshTimer: null
@@ -474,6 +476,108 @@ export default {
         })
       }
     },
+    buildUploadClientKey (file, dirPath = '') {
+      return [
+        file.name || '',
+        file.size || 0,
+        file.lastModified || 0,
+        this.currentPath || '/',
+        dirPath || ''
+      ].join('::')
+    },
+    async executeDirectUpload (file, dirPath, task, option) {
+      const formData = new FormData()
+      formData.append('sshInfo', this.$store.getters.sshReq)
+      formData.append('path', this.currentPath)
+      formData.append('id', file.uid || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+      if (dirPath) {
+        formData.append('dir', dirPath)
+      }
+      formData.append('file', file, file.name)
+
+      const result = await request.post('/file/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+        skipGlobalError: true,
+        onUploadProgress: (evt) => {
+          if (!evt || !evt.total) return
+          const percent = Math.max(task.progress, Math.min(99, Math.round((evt.loaded / evt.total) * 100)))
+          task.progress = percent
+          if (option.onProgress) {
+            option.onProgress({ percent })
+          }
+        }
+      })
+      return result
+    },
+    async executeResumableUpload (file, dirPath, task, option) {
+      const chunkSize = this.resumableChunkSize
+      const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize))
+      const initPayload = {
+        clientKey: this.buildUploadClientKey(file, dirPath),
+        sshInfo: this.$store.getters.sshReq,
+        path: this.currentPath,
+        dir: dirPath,
+        fileName: file.name,
+        fileSize: file.size,
+        chunkSize,
+        totalChunks
+      }
+      const initResp = await request.post('/file/upload/init', initPayload, {
+        timeout: 30000,
+        skipGlobalError: true
+      })
+      if (!initResp || initResp.Msg !== 'success') {
+        throw new Error((initResp && initResp.Msg) || '初始化分片上传失败')
+      }
+      const fileId = initResp.Data && initResp.Data.fileId
+      if (!fileId) {
+        throw new Error('分片会话创建失败')
+      }
+      const uploadedSet = new Set((initResp.Data && initResp.Data.uploadedChunks) || [])
+      let doneChunks = uploadedSet.size
+      task.progress = Math.max(task.progress, Math.min(99, Math.round((doneChunks / totalChunks) * 100)))
+
+      for (let i = 0; i < totalChunks; i++) {
+        if (uploadedSet.has(i)) {
+          continue
+        }
+        const start = i * chunkSize
+        const end = Math.min(file.size, start + chunkSize)
+        const chunkFile = file.slice(start, end)
+        const chunkForm = new FormData()
+        chunkForm.append('fileId', fileId)
+        chunkForm.append('chunkIndex', String(i))
+        chunkForm.append('file', chunkFile, `${file.name}.part${i}`)
+
+        await request.post('/file/upload/chunk', chunkForm, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 120000,
+          skipGlobalError: true,
+          onUploadProgress: (evt) => {
+            if (!evt || !evt.total) return
+            const currentChunkPercent = Math.min(1, evt.loaded / evt.total)
+            const overall = ((doneChunks + currentChunkPercent) / totalChunks) * 100
+            const percent = Math.max(task.progress, Math.min(99, Math.round(overall)))
+            task.progress = percent
+            if (option.onProgress) {
+              option.onProgress({ percent })
+            }
+          }
+        })
+        doneChunks += 1
+        const percent = Math.max(task.progress, Math.min(99, Math.round((doneChunks / totalChunks) * 100)))
+        task.progress = percent
+      }
+
+      const completeForm = new FormData()
+      completeForm.append('fileId', fileId)
+      const completeResp = await request.post('/file/upload/complete', completeForm, {
+        timeout: 120000,
+        skipGlobalError: true
+      })
+      return completeResp
+    },
     async executeUploadRequest (option) {
       const file = option.file
       const dirPath = option.dir !== undefined
@@ -485,29 +589,11 @@ export default {
       }
       task.status = 'uploading'
 
-      const formData = new FormData()
-      formData.append('sshInfo', this.$store.getters.sshReq)
-      formData.append('path', this.currentPath)
-      formData.append('id', file.uid || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
-      if (dirPath) {
-        formData.append('dir', dirPath)
-      }
-      formData.append('file', file, file.name)
-
       try {
-        const result = await request.post('/file/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 120000,
-          skipGlobalError: true,
-          onUploadProgress: (evt) => {
-            if (!evt || !evt.total) return
-            const percent = Math.max(task.progress, Math.min(99, Math.round((evt.loaded / evt.total) * 100)))
-            task.progress = percent
-            if (option.onProgress) {
-              option.onProgress({ percent })
-            }
-          }
-        })
+        const useResumable = file && file.size >= this.resumableThreshold
+        const result = useResumable
+          ? await this.executeResumableUpload(file, dirPath, task, option)
+          : await this.executeDirectUpload(file, dirPath, task, option)
         if (result.Msg !== 'success') {
           task.status = 'failed'
           task.message = result.Msg || '未知错误'
@@ -524,7 +610,7 @@ export default {
         this.scheduleFileListRefresh()
       } catch (err) {
         task.status = 'failed'
-        task.message = '网络或服务异常'
+        task.message = (err && err.message) || '网络或服务异常'
         // Keep file ref only for failed tasks so retry can work.
         task.file = file
         task.dir = dirPath

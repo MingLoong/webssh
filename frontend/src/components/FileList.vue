@@ -83,13 +83,11 @@
         <span>上传任务（等待 {{ queuedCount }}，上传中 {{ uploadingCount }}）</span>
         <div class="task-panel-actions">
           <span class="concurrency-label">并发</span>
-          <el-input-number
-            v-model="maxConcurrentUploads"
-            :min="1"
-            :max="10"
-            size="mini"
-            controls-position="right"
-          />
+          <el-button-group class="concurrency-group">
+            <el-button size="mini" icon="el-icon-minus" @click="decrementConcurrent" />
+            <el-button size="mini" class="concurrency-value" @click="resetConcurrent">{{ maxConcurrentUploads }}</el-button>
+            <el-button size="mini" icon="el-icon-plus" @click="incrementConcurrent" />
+          </el-button-group>
           <el-button type="text" @click="clearFinishedTasks">清理已完成</el-button>
         </div>
       </div>
@@ -214,6 +212,15 @@ export default {
       if (status === 'success') return '成功'
       if (status === 'failed') return '失败'
       return status
+    },
+    decrementConcurrent () {
+      this.maxConcurrentUploads = Math.max(1, this.maxConcurrentUploads - 1)
+    },
+    incrementConcurrent () {
+      this.maxConcurrentUploads = Math.min(10, this.maxConcurrentUploads + 1)
+    },
+    resetConcurrent () {
+      this.maxConcurrentUploads = 2
     },
     clearFinishedTasks () {
       this.uploadTasks = this.uploadTasks.filter(v => v.status === 'uploading' || v.status === 'queued')
@@ -760,6 +767,11 @@ export default {
 .concurrency-label {
   font-size: 12px;
   color: #6b7280;
+}
+
+.concurrency-group .concurrency-value {
+  min-width: 38px;
+  padding: 7px 8px;
 }
 
 .task-list {

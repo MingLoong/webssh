@@ -496,7 +496,6 @@ export default {
       formData.append('file', file, file.name)
 
       const result = await request.post('/file/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 120000,
         skipGlobalError: true,
         onUploadProgress: (evt) => {
@@ -551,7 +550,6 @@ export default {
         chunkForm.append('file', chunkFile, `${file.name}.part${i}`)
 
         await request.post('/file/upload/chunk', chunkForm, {
-          headers: { 'Content-Type': 'multipart/form-data' },
           timeout: 120000,
           skipGlobalError: true,
           onUploadProgress: (evt) => {

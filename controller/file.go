@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -114,6 +115,17 @@ func UploadFile(c *gin.Context) *ResponseBody {
 		return &responseBody
 	}
 	defer sshClient.Close()
+
+	// Use a small in-memory multipart budget to avoid large heap growth
+	// when uploading many/sizable files. Overflow parts are stored on disk.
+	if err := c.Request.ParseMultipartForm(2 << 20); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	if c.Request.MultipartForm != nil {
+		defer c.Request.MultipartForm.RemoveAll()
+	}
+
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
 		responseBody.Msg = err.Error()
@@ -137,6 +149,11 @@ func UploadFile(c *gin.Context) *ResponseBody {
 	if err != nil {
 		fmt.Println(err)
 		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	// For large uploads, proactively return free pages to OS so RSS drops faster.
+	if header != nil && header.Size >= 32<<20 {
+		debug.FreeOSMemory()
 	}
 	return &responseBody
 }

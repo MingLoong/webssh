@@ -144,7 +144,9 @@ export default {
 
       try {
         fitAddon.fit()
-      } catch (e) {}
+      } catch (e) {
+        // Ignore transient fit errors during initial render.
+      }
 
       const self = this
       const heartCheck = {
@@ -262,7 +264,9 @@ export default {
           }
           try {
             fitAddon.fit()
-          } catch (e) {}
+          } catch (e) {
+            // Ignore transient fit errors during resize.
+          }
           if (self.ws !== null && self.ws.readyState === 1) {
             self.ws.send(`resize:${self.term.rows}:${self.term.cols}`)
           }
@@ -272,7 +276,9 @@ export default {
       window.addEventListener('resize', () => {
         try {
           fitAddon.fit()
-        } catch (e) {}
+        } catch (e) {
+          // Ignore transient fit errors during resize.
+        }
         if (self.ws !== null && self.ws.readyState === 1) {
           self.ws.send(`resize:${self.term.rows}:${self.term.cols}`)
         }

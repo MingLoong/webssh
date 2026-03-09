@@ -143,6 +143,8 @@ export default {
       maxConcurrentUploads: 2,
       resumableThreshold: 8 * 1024 * 1024,
       resumableChunkSize: 5 * 1024 * 1024,
+      resumableChunkRetryTimes: 3,
+      resumableRetryBaseDelay: 500,
       successKeepLimit: 50,
       successTotalCount: 0,
       refreshTimer: null
@@ -485,6 +487,9 @@ export default {
         dirPath || ''
       ].join('::')
     },
+    waitMs (ms) {
+      return new Promise(resolve => setTimeout(resolve, ms))
+    },
     async executeDirectUpload (file, dirPath, task, option) {
       const formData = new FormData()
       formData.append('sshInfo', this.$store.getters.sshReq)
@@ -549,20 +554,38 @@ export default {
         chunkForm.append('chunkIndex', String(i))
         chunkForm.append('file', chunkFile, `${file.name}.part${i}`)
 
-        await request.post('/file/upload/chunk', chunkForm, {
-          timeout: 120000,
-          skipGlobalError: true,
-          onUploadProgress: (evt) => {
-            if (!evt || !evt.total) return
-            const currentChunkPercent = Math.min(1, evt.loaded / evt.total)
-            const overall = ((doneChunks + currentChunkPercent) / totalChunks) * 100
-            const percent = Math.max(task.progress, Math.min(99, Math.round(overall)))
-            task.progress = percent
-            if (option.onProgress) {
-              option.onProgress({ percent })
+        let uploaded = false
+        let lastError = null
+        for (let retry = 0; retry <= this.resumableChunkRetryTimes; retry++) {
+          try {
+            await request.post('/file/upload/chunk', chunkForm, {
+              timeout: 120000,
+              skipGlobalError: true,
+              onUploadProgress: (evt) => {
+                if (!evt || !evt.total) return
+                const currentChunkPercent = Math.min(1, evt.loaded / evt.total)
+                const overall = ((doneChunks + currentChunkPercent) / totalChunks) * 100
+                const percent = Math.max(task.progress, Math.min(99, Math.round(overall)))
+                task.progress = percent
+                if (option.onProgress) {
+                  option.onProgress({ percent })
+                }
+              }
+            })
+            uploaded = true
+            break
+          } catch (err) {
+            lastError = err
+            if (retry >= this.resumableChunkRetryTimes) {
+              break
             }
+            const delay = this.resumableRetryBaseDelay * Math.pow(2, retry)
+            await this.waitMs(delay)
           }
-        })
+        }
+        if (!uploaded) {
+          throw new Error((lastError && lastError.message) || `分片上传失败: #${i + 1}/${totalChunks}`)
+        }
         doneChunks += 1
         const percent = Math.max(task.progress, Math.min(99, Math.round((doneChunks / totalChunks) * 100)))
         task.progress = percent

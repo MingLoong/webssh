@@ -94,33 +94,50 @@
       <div class="context-menu-item danger" @click="deleteByContext">删除</div>
     </div>
 
-    <el-dialog title="修改权限/属主" :visible.sync="chmodDialog.visible" width="360px" append-to-body>
+    <el-dialog title="修改权限/属主" :visible.sync="chmodDialog.visible" width="420px" append-to-body>
       <div class="chmod-options">
-        <el-checkbox v-model="chmodDialog.applyMode">同时修改权限</el-checkbox>
+        <label class="mode-toggle">
+          <input type="checkbox" v-model="chmodDialog.applyMode">
+          <span>同时修改权限</span>
+        </label>
+        <div class="form-hint">勾选后会提交权限（八进制+下方勾选项），取消则只修改所属用户/组。</div>
       </div>
-      <el-input v-model.trim="chmodDialog.mode" placeholder="例如 755" @input="onChmodModeInput"></el-input>
+
+      <div class="form-section">
+        <div class="section-title">权限设置</div>
+        <el-input
+          v-model.trim="chmodDialog.mode"
+          :disabled="!chmodDialog.applyMode"
+          placeholder="例如 755"
+          @input="onChmodModeInput"
+        ></el-input>
+        <div class="form-hint">示例：`755` 表示 所有者 rwx / 用户组 r-x / 其他 r-x</div>
+      </div>
+
       <div class="chown-form">
+        <div class="section-title">属主设置</div>
         <el-input v-model.trim="chmodDialog.owner" placeholder="所属用户（用户名或UID）"></el-input>
         <el-input v-model.trim="chmodDialog.group" placeholder="所属用户组（组名或GID）"></el-input>
+        <div class="form-hint">可单独修改用户或用户组，留空代表保持当前值不变。</div>
       </div>
-      <div class="chmod-grid">
+      <div class="chmod-grid" :class="{ disabled: !chmodDialog.applyMode }">
         <div class="chmod-row">
           <span class="chmod-label">所有者</span>
-          <label><input type="checkbox" v-model="chmodDialog.bits.owner.r" @change="onChmodBitsChange"> 读</label>
-          <label><input type="checkbox" v-model="chmodDialog.bits.owner.w" @change="onChmodBitsChange"> 写</label>
-          <label><input type="checkbox" v-model="chmodDialog.bits.owner.x" @change="onChmodBitsChange"> 执行</label>
+          <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.owner.r" @change="onChmodBitsChange"> 读</label>
+          <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.owner.w" @change="onChmodBitsChange"> 写</label>
+          <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.owner.x" @change="onChmodBitsChange"> 执行</label>
         </div>
         <div class="chmod-row">
           <span class="chmod-label">用户组</span>
-          <label><input type="checkbox" v-model="chmodDialog.bits.group.r" @change="onChmodBitsChange"> 读</label>
-          <label><input type="checkbox" v-model="chmodDialog.bits.group.w" @change="onChmodBitsChange"> 写</label>
-          <label><input type="checkbox" v-model="chmodDialog.bits.group.x" @change="onChmodBitsChange"> 执行</label>
+          <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.group.r" @change="onChmodBitsChange"> 读</label>
+          <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.group.w" @change="onChmodBitsChange"> 写</label>
+          <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.group.x" @change="onChmodBitsChange"> 执行</label>
         </div>
         <div class="chmod-row">
           <span class="chmod-label">其他</span>
-          <label><input type="checkbox" v-model="chmodDialog.bits.other.r" @change="onChmodBitsChange"> 读</label>
-          <label><input type="checkbox" v-model="chmodDialog.bits.other.w" @change="onChmodBitsChange"> 写</label>
-          <label><input type="checkbox" v-model="chmodDialog.bits.other.x" @change="onChmodBitsChange"> 执行</label>
+          <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.other.r" @change="onChmodBitsChange"> 读</label>
+          <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.other.w" @change="onChmodBitsChange"> 写</label>
+          <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.other.x" @change="onChmodBitsChange"> 执行</label>
         </div>
       </div>
       <div slot="footer" class="dialog-footer">
@@ -1253,6 +1270,32 @@ export default {
   margin-bottom: 8px;
 }
 
+.mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #111827;
+  font-weight: 600;
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-title {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.form-hint {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #6b7280;
+}
+
 .chmod-row {
   display: flex;
   align-items: center;
@@ -1269,6 +1312,10 @@ export default {
 .chmod-label {
   width: 48px;
   color: #6b7280;
+}
+
+.chmod-grid.disabled {
+  opacity: 0.6;
 }
 
 .task-panel {

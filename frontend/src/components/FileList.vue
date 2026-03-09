@@ -52,7 +52,6 @@
         >
           <i class="el-icon-upload"></i>
           <div class="el-upload__text">{{ $t(selectTip) }}</div>
-          <div class="el-upload__tip" slot="tip">{{ uploadTip }}</div>
         </el-upload>
 
         <div v-if="isDialogDragOver" class="drop-mask dialog-mask">
@@ -387,7 +386,7 @@ export default {
       }
     },
     openUploadDialog () {
-      this.uploadTip = `${this.$t('uploadPath')}: ${this.currentPath}`
+      this.uploadTip = ''
       this.uploadVisible = true
     },
     handleUploadCommand (cmd) {
@@ -421,7 +420,9 @@ export default {
       return 'webkitdirectory' in document.createElement('input')
     },
     beforeUpload (file) {
-      this.uploadTip = `${this.$t('uploading')} ${file.name} ${this.$t('to')} ${this.currentPath}, ${this.$t('notCloseWindows')}..`
+      if (this.uploadVisible) {
+        this.uploadVisible = false
+      }
       this.uploadData.id = file.uid
       const dirPath = file.webkitRelativePath
       this.uploadData.dir = dirPath ? dirPath.substring(0, dirPath.lastIndexOf('/')) : ''
@@ -431,14 +432,12 @@ export default {
       return true
     },
     uploadSuccess (r, file) {
-      this.uploadTip = `${file.name}${this.$t('uploadFinish')}!`
       const task = this.getUploadTaskByUid(file.uid)
       if (task) {
         if (r && r.Msg === 'success') {
           task.status = 'success'
           task.progress = 100
           task.message = ''
-          this.uploadVisible = false
         } else {
           task.status = 'failed'
           task.message = (r && r.Msg) || '上传失败'

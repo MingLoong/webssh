@@ -6,16 +6,55 @@ import (
 	"golang.org/x/crypto/ssh"
 	"io"
 	"log"
+	"sync"
 	"unicode/utf8"
 )
 
 // WcList 全局counter list变量
 var WcList []*WriteCounter
+var wcMu sync.RWMutex
 
 // WriteCounter 结构体
 type WriteCounter struct {
 	Total int
 	Id    string
+}
+
+// AddWriteCounter appends a counter in a thread-safe way.
+func AddWriteCounter(wc *WriteCounter) {
+	if wc == nil {
+		return
+	}
+	wcMu.Lock()
+	WcList = append(WcList, wc)
+	wcMu.Unlock()
+}
+
+// RemoveWriteCounterByID removes the counter by id in a thread-safe way.
+func RemoveWriteCounterByID(id string) {
+	wcMu.Lock()
+	defer wcMu.Unlock()
+	for i := 0; i < len(WcList); i++ {
+		if WcList[i].Id == id {
+			WcList = append(WcList[:i], WcList[i+1:]...)
+			break
+		}
+	}
+	if len(WcList) == 0 {
+		WcList = nil
+	}
+}
+
+// SnapshotWriteCounters returns a copy of current counters for safe iteration.
+func SnapshotWriteCounters() []*WriteCounter {
+	wcMu.RLock()
+	defer wcMu.RUnlock()
+	if len(WcList) == 0 {
+		return nil
+	}
+	out := make([]*WriteCounter, len(WcList))
+	copy(out, WcList)
+	return out
 }
 
 // Write: implement Write interface to write bytes from ssh server into bytes.Buffer.

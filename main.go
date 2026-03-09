@@ -99,6 +99,18 @@ func main() {
 		file.POST("/upload", func(c *gin.Context) {
 			c.JSON(200, controller.UploadFile(c))
 		})
+		file.POST("/upload/init", func(c *gin.Context) {
+			c.JSON(200, controller.UploadInit(c))
+		})
+		file.GET("/upload/status", func(c *gin.Context) {
+			c.JSON(200, controller.UploadStatus(c))
+		})
+		file.POST("/upload/chunk", func(c *gin.Context) {
+			c.JSON(200, controller.UploadChunk(c))
+		})
+		file.POST("/upload/complete", func(c *gin.Context) {
+			c.JSON(200, controller.UploadComplete(c))
+		})
 		file.GET("/progress", func(c *gin.Context) {
 			controller.UploadProgressWs(c)
 		})

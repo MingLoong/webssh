@@ -71,6 +71,8 @@
         </template>
       </el-table-column>
       <el-table-column :label="$t('Size')" prop="Size" width="90" :resizable="true"></el-table-column>
+      <el-table-column label="权限" prop="Permission" width="120" :resizable="true" show-overflow-tooltip></el-table-column>
+      <el-table-column label="用户/组" prop="OwnerGroup" width="120" :resizable="true" show-overflow-tooltip></el-table-column>
       <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" min-width="160" sortable show-overflow-tooltip :resizable="true"></el-table-column>
     </el-table>
 
@@ -87,9 +89,18 @@
       <div class="context-menu-item" @click="copyByContext">复制</div>
       <div class="context-menu-item" @click="cutByContext">剪切</div>
       <div class="context-menu-item" @click="renameByContext">重命名</div>
+      <div class="context-menu-item" @click="chmodByContext">修改权限</div>
       <div class="context-menu-item" :class="{ disabled: !copiedItem }" @click="pasteByContext">粘贴到当前目录</div>
       <div class="context-menu-item danger" @click="deleteByContext">删除</div>
     </div>
+
+    <el-dialog title="修改权限" :visible.sync="chmodDialog.visible" width="320px" append-to-body>
+      <el-input v-model.trim="chmodDialog.mode" placeholder="例如 755"></el-input>
+      <div slot="footer" class="dialog-footer">
+        <el-button size="small" @click="chmodDialog.visible = false">取消</el-button>
+        <el-button size="small" type="primary" @click="submitChmod">确定</el-button>
+      </div>
+    </el-dialog>
 
     <div v-if="uploadTasks.length" class="task-panel">
       <div class="task-panel-header">
@@ -127,7 +138,7 @@
 </template>
 
 <script>
-import { fileList, fileDelete, fileCopy, filePaste, fileMove, fileRename } from '@/api/file'
+import { fileList, fileDelete, fileCopy, filePaste, fileMove, fileRename, fileChmod } from '@/api/file'
 import request from '@/utils/request'
 import { mapState } from 'vuex'
 
@@ -167,6 +178,11 @@ export default {
         x: 0,
         y: 0,
         row: null
+      },
+      chmodDialog: {
+        visible: false,
+        path: '',
+        mode: ''
       }
     }
   },
@@ -241,6 +257,20 @@ export default {
       return this.currentPath.charAt(this.currentPath.length - 1) === '/'
         ? this.currentPath + row.Name
         : this.currentPath + '/' + row.Name
+    },
+    permissionTextToOctal (permissionText) {
+      if (!permissionText || permissionText.length < 10) {
+        return '755'
+      }
+      const triads = [permissionText.slice(1, 4), permissionText.slice(4, 7), permissionText.slice(7, 10)]
+      const toDigit = (triad) => {
+        let n = 0
+        if (triad[0] === 'r') n += 4
+        if (triad[1] === 'w') n += 2
+        if (triad[2] === 'x' || triad[2] === 's' || triad[2] === 't') n += 1
+        return String(n)
+      }
+      return triads.map(toDigit).join('')
     },
     async copyByContext () {
       const row = this.contextMenu.row
@@ -325,6 +355,30 @@ export default {
         return
       }
       this.$message.success('重命名成功')
+      this.getFileList()
+    },
+    chmodByContext () {
+      const row = this.contextMenu.row
+      this.hideContextMenu()
+      const targetPath = this.buildRowPath(row)
+      if (!targetPath) return
+      this.chmodDialog.path = targetPath
+      this.chmodDialog.mode = this.permissionTextToOctal(row && row.Permission)
+      this.chmodDialog.visible = true
+    },
+    async submitChmod () {
+      const mode = (this.chmodDialog.mode || '').trim()
+      if (!/^[0-7]{3,4}$/.test(mode)) {
+        this.$message.warning('权限格式错误，请输入 3-4 位八进制数字，例如 755')
+        return
+      }
+      const result = await fileChmod(this.chmodDialog.path, mode, this.$store.getters.sshReq)
+      if (result.Msg !== 'success') {
+        this.$message.error(result.Msg || '修改权限失败')
+        return
+      }
+      this.chmodDialog.visible = false
+      this.$message.success('修改权限成功')
       this.getFileList()
     },
     createUploadTask (file, dir = '', uid = '', keepFileRef = false) {

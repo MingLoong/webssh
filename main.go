@@ -68,10 +68,12 @@ func init() {
 }
 
 func main() {
-    server := gin.New()
-    server.Use(gin.Recovery())
-    server.SetTrustedProxies(nil)
-    server.Use(gzip.Gzip(gzip.DefaultCompression))
+	server := gin.New()
+	server.Use(gin.Recovery())
+	server.SetTrustedProxies(nil)
+	server.Use(gzip.Gzip(gzip.DefaultCompression))
+	// Keep multipart in-memory buffer small; large parts spill to temp files.
+	server.MaxMultipartMemory = 2 << 20
 
 	// --- API Routes ---
 	// No BasicAuth for API routes as per original logic.

@@ -3,7 +3,9 @@ package controller
 import (
 	"fmt"
 	"io"
+	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 	"webssh/core"
@@ -321,6 +323,46 @@ func RenameFileOrDir(c *gin.Context) *ResponseBody {
 	}
 	responseBody.Data = gin.H{
 		"path": dstPath,
+	}
+	return &responseBody
+}
+
+// ChmodFileOrDir updates remote file/dir mode by octal string (e.g. 755/644).
+func ChmodFileOrDir(c *gin.Context) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	targetPath := strings.TrimSpace(c.DefaultPostForm("path", ""))
+	modeStr := strings.TrimSpace(c.DefaultPostForm("mode", ""))
+	sshInfo := strings.TrimSpace(c.DefaultPostForm("sshInfo", ""))
+	if targetPath == "" || modeStr == "" || sshInfo == "" {
+		responseBody.Msg = "path, mode and sshInfo are required"
+		return &responseBody
+	}
+	modeStr = strings.TrimPrefix(modeStr, "0")
+	if modeStr == "" {
+		modeStr = "0"
+	}
+	modeValue, err := strconv.ParseUint(modeStr, 8, 32)
+	if err != nil {
+		responseBody.Msg = "invalid mode, use octal like 755"
+		return &responseBody
+	}
+
+	sshClient, err := core.DecodedMsgToSSHClient(sshInfo)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	if err := sshClient.CreateSftp(); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	defer sshClient.Close()
+
+	if err := sshClient.Sftp.Chmod(targetPath, os.FileMode(modeValue)); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
 	}
 	return &responseBody
 }

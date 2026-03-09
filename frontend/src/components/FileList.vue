@@ -85,6 +85,8 @@
       @click.stop
     >
       <div class="context-menu-item" @click="copyByContext">复制</div>
+      <div class="context-menu-item" @click="cutByContext">剪切</div>
+      <div class="context-menu-item" @click="renameByContext">重命名</div>
       <div class="context-menu-item" :class="{ disabled: !copiedItem }" @click="pasteByContext">粘贴到当前目录</div>
       <div class="context-menu-item danger" @click="deleteByContext">删除</div>
     </div>
@@ -125,7 +127,7 @@
 </template>
 
 <script>
-import { fileList, fileDelete, fileCopy, filePaste } from '@/api/file'
+import { fileList, fileDelete, fileCopy, filePaste, fileMove, fileRename } from '@/api/file'
 import request from '@/utils/request'
 import { mapState } from 'vuex'
 
@@ -252,19 +254,41 @@ export default {
       }
       this.copiedItem = {
         path: srcPath,
-        name: row.Name
+        name: row.Name,
+        mode: 'copy'
       }
       this.$message.success(`已复制：${row.Name}`)
+    },
+    async cutByContext () {
+      const row = this.contextMenu.row
+      this.hideContextMenu()
+      const srcPath = this.buildRowPath(row)
+      if (!srcPath) return
+      const result = await fileCopy(srcPath, this.$store.getters.sshReq)
+      if (result.Msg !== 'success') {
+        this.$message.error(result.Msg || '剪切失败')
+        return
+      }
+      this.copiedItem = {
+        path: srcPath,
+        name: row.Name,
+        mode: 'move'
+      }
+      this.$message.success(`已剪切：${row.Name}`)
     },
     async pasteByContext () {
       if (!this.copiedItem || !this.copiedItem.path) {
         return
       }
       this.hideContextMenu()
-      const result = await filePaste(this.copiedItem.path, this.currentPath, this.$store.getters.sshReq)
+      const action = this.copiedItem.mode === 'move' ? fileMove : filePaste
+      const result = await action(this.copiedItem.path, this.currentPath, this.$store.getters.sshReq)
       if (result.Msg !== 'success') {
         this.$message.error(result.Msg || '粘贴失败')
         return
+      }
+      if (this.copiedItem.mode === 'move') {
+        this.copiedItem = null
       }
       this.$message.success('粘贴成功')
       this.getFileList()
@@ -274,11 +298,8 @@ export default {
       this.hideContextMenu()
       const targetPath = this.buildRowPath(row)
       if (!targetPath) return
-      try {
-        await this.$confirm(`确认删除 ${row.Name} 吗？`, '提示', {
-          type: 'warning'
-        })
-      } catch (e) {
+      const ok = window.confirm(`确认删除 ${row.Name} 吗？`)
+      if (!ok) {
         return
       }
       const result = await fileDelete(targetPath, this.$store.getters.sshReq)
@@ -287,6 +308,23 @@ export default {
         return
       }
       this.$message.success('删除成功')
+      this.getFileList()
+    },
+    async renameByContext () {
+      const row = this.contextMenu.row
+      this.hideContextMenu()
+      const srcPath = this.buildRowPath(row)
+      if (!srcPath) return
+      const input = window.prompt('输入新名称', row.Name)
+      if (input === null) return
+      const newName = String(input).trim()
+      if (!newName || newName === row.Name) return
+      const result = await fileRename(srcPath, newName, this.$store.getters.sshReq)
+      if (result.Msg !== 'success') {
+        this.$message.error(result.Msg || '重命名失败')
+        return
+      }
+      this.$message.success('重命名成功')
       this.getFileList()
     },
     createUploadTask (file, dir = '', uid = '', keepFileRef = false) {

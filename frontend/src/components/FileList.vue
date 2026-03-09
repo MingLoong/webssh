@@ -43,6 +43,7 @@
           multiple
           drag
           :show-file-list="false"
+          :http-request="enqueueUploadRequest"
           :action="uploadUrl"
           :data="uploadData"
           :before-upload="beforeUpload"
@@ -124,7 +125,10 @@ export default {
       isDialogDragOver: false,
       panelDragCounter: 0,
       dialogDragCounter: 0,
-      uploadTasks: []
+      uploadTasks: [],
+      uploadRequestQueue: [],
+      uploadWorkerRunning: false,
+      refreshTimer: null
     }
   },
   mounted () {
@@ -165,6 +169,12 @@ export default {
     currentTab () {
       this.fileList = []
       this.currentPath = this.currentTab && this.currentTab.path ? this.currentTab.path : '/'
+    }
+  },
+  beforeDestroy () {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer)
+      this.refreshTimer = null
     }
   },
   methods: {
@@ -367,6 +377,8 @@ export default {
       try {
         const result = await request.post('/file/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 120000,
+          skipGlobalError: true,
           onUploadProgress: (evt) => {
             if (!evt || !evt.total) return
             task.progress = Math.max(task.progress, Math.min(99, Math.round((evt.loaded / evt.total) * 100)))
@@ -381,6 +393,7 @@ export default {
         task.status = 'success'
         task.progress = 100
         task.message = ''
+        this.scheduleFileListRefresh()
         return true
       } catch (err) {
         task.status = 'failed'
@@ -402,6 +415,83 @@ export default {
     openUploadDialog () {
       this.uploadTip = ''
       this.uploadVisible = true
+    },
+    enqueueUploadRequest (option) {
+      this.uploadRequestQueue.push(option)
+      this.processUploadQueue()
+    },
+    async processUploadQueue () {
+      if (this.uploadWorkerRunning) {
+        return
+      }
+      this.uploadWorkerRunning = true
+      try {
+        while (this.uploadRequestQueue.length > 0) {
+          const option = this.uploadRequestQueue.shift()
+          // eslint-disable-next-line no-await-in-loop
+          await this.executeUploadRequest(option)
+        }
+      } finally {
+        this.uploadWorkerRunning = false
+      }
+    },
+    async executeUploadRequest (option) {
+      const file = option.file
+      const dirPath = file.webkitRelativePath ? file.webkitRelativePath.substring(0, file.webkitRelativePath.lastIndexOf('/')) : ''
+      let task = this.getUploadTaskByUid(file.uid)
+      if (!task) {
+        task = this.createUploadTask(file, dirPath, file.uid)
+      }
+      task.status = 'uploading'
+
+      const formData = new FormData()
+      formData.append('sshInfo', this.$store.getters.sshReq)
+      formData.append('path', this.currentPath)
+      formData.append('id', file.uid || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+      if (dirPath) {
+        formData.append('dir', dirPath)
+      }
+      formData.append('file', file, file.name)
+
+      try {
+        const result = await request.post('/file/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 120000,
+          skipGlobalError: true,
+          onUploadProgress: (evt) => {
+            if (!evt || !evt.total) return
+            const percent = Math.max(task.progress, Math.min(99, Math.round((evt.loaded / evt.total) * 100)))
+            task.progress = percent
+            if (option.onProgress) {
+              option.onProgress({ percent })
+            }
+          }
+        })
+        if (result.Msg !== 'success') {
+          task.status = 'failed'
+          task.message = result.Msg || '未知错误'
+          if (option.onError) option.onError(new Error(task.message), file)
+          return
+        }
+        task.status = 'success'
+        task.progress = 100
+        task.message = ''
+        if (option.onSuccess) option.onSuccess(result, file)
+        this.scheduleFileListRefresh()
+      } catch (err) {
+        task.status = 'failed'
+        task.message = '网络或服务异常'
+        if (option.onError) option.onError(err, file)
+      }
+    },
+    scheduleFileListRefresh () {
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer)
+      }
+      this.refreshTimer = setTimeout(() => {
+        this.getFileList()
+        this.refreshTimer = null
+      }, 800)
     },
     handleUploadCommand (cmd) {
       this.uploadMode = cmd === 'folder' ? 'folder' : 'file'
@@ -457,7 +547,7 @@ export default {
           task.message = (r && r.Msg) || '上传失败'
         }
       }
-      this.getFileList()
+      this.scheduleFileListRefresh()
     },
     uploadError (err, file) {
       const task = this.getUploadTaskByUid(file && file.uid)

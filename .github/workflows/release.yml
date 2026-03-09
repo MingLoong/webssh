@@ -53,26 +53,26 @@ jobs:
           echo "Building for linux/amd64..."
           GOOS=linux GOARCH=amd64 go build -ldflags "-extldflags -static" -o dist/webssh_linux_amd64 main.go
           
-          #echo "Building for linux/arm64..."
-          #GOOS=linux GOARCH=arm64 go build -ldflags "-extldflags -static" -o dist/webssh_linux_arm64 main.go
+          echo "Building for linux/arm64..."
+          GOOS=linux GOARCH=arm64 go build -ldflags "-extldflags -static" -o dist/webssh_linux_arm64 main.go
           
-          #echo "Building for linux/s390x..."
-          #GOOS=linux GOARCH=s390x go build -ldflags "-extldflags -static" -o dist/webssh_linux_s390x main.go
+          echo "Building for linux/s390x..."
+          GOOS=linux GOARCH=s390x go build -ldflags "-extldflags -static" -o dist/webssh_linux_s390x main.go
           
-          #echo "Building for darwin/amd64..."
-          #GOOS=darwin GOARCH=amd64 go build -ldflags "-extldflags -static" -o dist/webssh_darwin_amd64 main.go
+          echo "Building for darwin/amd64..."
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-extldflags -static" -o dist/webssh_darwin_amd64 main.go
           
-          #echo "Building for darwin/arm64..."
-          #GOOS=darwin GOARCH=arm64 go build -ldflags "-extldflags -static" -o dist/webssh_darwin_arm64 main.go
+          echo "Building for darwin/arm64..."
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-extldflags -static" -o dist/webssh_darwin_arm64 main.go
           
-          #echo "Building for windows/amd64..."
-          #GOOS=windows GOARCH=amd64 go build -ldflags "-extldflags -static" -o dist/webssh_windows_amd64.exe main.go
+          echo "Building for windows/amd64..."
+          GOOS=windows GOARCH=amd64 go build -ldflags "-extldflags -static" -o dist/webssh_windows_amd64.exe main.go
           
-          #echo "Building for windows/arm64..."
-          #GOOS=windows GOARCH=arm64 go build -ldflags "-extldflags -static" -o dist/webssh_windows_arm64.exe main.go
+          echo "Building for windows/arm64..."
+          GOOS=windows GOARCH=arm64 go build -ldflags "-extldflags -static" -o dist/webssh_windows_arm64.exe main.go
           
-          #echo "Building for freebsd/amd64..."
-          #GOOS=freebsd GOARCH=amd64 go build -ldflags "-extldflags -static" -o dist/webssh_freebsd_amd64 main.go
+          echo "Building for freebsd/amd64..."
+          GOOS=freebsd GOARCH=amd64 go build -ldflags "-extldflags -static" -o dist/webssh_freebsd_amd64 main.go
           
           echo "Build completed successfully!"
 

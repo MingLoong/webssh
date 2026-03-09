@@ -366,3 +366,99 @@ func ChmodFileOrDir(c *gin.Context) *ResponseBody {
 	}
 	return &responseBody
 }
+
+func reverseNameMap(idNameMap map[uint32]string) map[string]uint32 {
+	result := make(map[string]uint32, len(idNameMap))
+	for id, name := range idNameMap {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		result[name] = id
+	}
+	return result
+}
+
+func resolveUserOrGroupID(raw string, nameIDMap map[string]uint32, kind string) (uint32, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return 0, fmt.Errorf("%s is empty", kind)
+	}
+	if uid64, err := strconv.ParseUint(value, 10, 32); err == nil {
+		return uint32(uid64), nil
+	}
+	if id, ok := nameIDMap[value]; ok {
+		return id, nil
+	}
+	return 0, fmt.Errorf("unknown %s: %s", kind, value)
+}
+
+// ChownFileOrDir updates file owner/group by user/group name or uid/gid.
+func ChownFileOrDir(c *gin.Context) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	targetPath := strings.TrimSpace(c.DefaultPostForm("path", ""))
+	ownerRaw := strings.TrimSpace(c.DefaultPostForm("owner", ""))
+	groupRaw := strings.TrimSpace(c.DefaultPostForm("group", ""))
+	sshInfo := strings.TrimSpace(c.DefaultPostForm("sshInfo", ""))
+	if targetPath == "" || sshInfo == "" {
+		responseBody.Msg = "path and sshInfo are required"
+		return &responseBody
+	}
+	if ownerRaw == "" && groupRaw == "" {
+		responseBody.Msg = "owner or group is required"
+		return &responseBody
+	}
+
+	sshClient, err := core.DecodedMsgToSSHClient(sshInfo)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	if err := sshClient.CreateSftp(); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	defer sshClient.Close()
+
+	fileInfo, err := sshClient.Sftp.Stat(targetPath)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	fileStat, ok := fileInfo.Sys().(*sftp.FileStat)
+	if !ok {
+		responseBody.Msg = "remote server does not support owner/group metadata"
+		return &responseBody
+	}
+	uid := fileStat.UID
+	gid := fileStat.GID
+
+	userMap, groupMap := loadRemoteUserGroupMaps(sshClient.Sftp)
+	nameUserMap := reverseNameMap(userMap)
+	nameGroupMap := reverseNameMap(groupMap)
+
+	if ownerRaw != "" {
+		parsedUID, err := resolveUserOrGroupID(ownerRaw, nameUserMap, "owner")
+		if err != nil {
+			responseBody.Msg = err.Error()
+			return &responseBody
+		}
+		uid = parsedUID
+	}
+	if groupRaw != "" {
+		parsedGID, err := resolveUserOrGroupID(groupRaw, nameGroupMap, "group")
+		if err != nil {
+			responseBody.Msg = err.Error()
+			return &responseBody
+		}
+		gid = parsedGID
+	}
+
+	if err := sshClient.Sftp.Chown(targetPath, int(uid), int(gid)); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	return &responseBody
+}

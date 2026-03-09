@@ -25,11 +25,12 @@
             </el-upload>
         </el-dialog>
         
-        <el-table :data="fileList" class="file-table" @row-click="rowClick" height="100%" stripe>
+        <el-table :data="fileList" class="file-table" @row-click="rowClick" height="100%" stripe border>
             <el-table-column
                 :label="$t('Name')"
-                min-width="220"
+                width="260"
                 show-overflow-tooltip
+                :resizable="true"
                 sortable :sort-method="nameSort">
                 <template slot-scope="scope">
                     <div class="name-cell" :class="{ 'is-dir': scope.row.IsDir }" :title="scope.row.Name">
@@ -38,8 +39,8 @@
                     </div>
                 </template>
             </el-table-column>
-            <el-table-column :label="$t('Size')" prop="Size" width="90"></el-table-column>
-            <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" width="160" sortable show-overflow-tooltip></el-table-column>
+            <el-table-column :label="$t('Size')" prop="Size" width="90" :resizable="true"></el-table-column>
+            <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" width="160" sortable show-overflow-tooltip :resizable="true"></el-table-column>
         </el-table>
     </div>
 </template>

@@ -55,11 +55,11 @@ export default {
       fontSize: 15,
       fitAddon: null,
       isSftpVisible: false,
-      sftpWidth: 350,
-      minSftpWidth: 260,
+      sftpWidth: 520,
+      minSftpWidth: 320,
       isResizingSftp: false,
       resizeStartX: 0,
-      resizeStartWidth: 350,
+      resizeStartWidth: 520,
       windowWidth: 1024,
       wsDisconnected: false,
       isReconnecting: false,
@@ -501,7 +501,7 @@ export default {
 }
 
 .file-tree {
-  width: 350px;
+  width: 520px;
   height: 100%;
   box-sizing: border-box;
   border-left: 1px solid var(--input-border);

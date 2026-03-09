@@ -104,35 +104,20 @@
           <input type="checkbox" v-model="chmodDialog.recursive">
           <span>递归应用到子目录/文件</span>
         </label>
-        <div class="form-hint">勾选后会提交权限（八进制+下方勾选项），取消则只修改所属用户/组。</div>
       </div>
 
       <div class="form-section">
-        <div class="section-title">权限设置</div>
         <el-input
           v-model.trim="chmodDialog.mode"
           :disabled="!chmodDialog.applyMode"
           placeholder="例如 755"
           @input="onChmodModeInput"
         ></el-input>
-        <div class="form-hint">示例：`755` 表示 所有者 rwx / 用户组 r-x / 其他 r-x</div>
       </div>
 
       <div class="chown-form">
-        <div class="section-title">属主设置</div>
-        <el-autocomplete
-          v-model.trim="chmodDialog.owner"
-          :fetch-suggestions="queryOwnerSuggestions"
-          :trigger-on-focus="true"
-          placeholder="所属用户（用户名或UID）"
-        />
-        <el-autocomplete
-          v-model.trim="chmodDialog.group"
-          :fetch-suggestions="queryGroupSuggestions"
-          :trigger-on-focus="true"
-          placeholder="所属用户组（组名或GID）"
-        />
-        <div class="form-hint">可单独修改用户或用户组，留空代表保持当前值不变。</div>
+        <el-input v-model.trim="chmodDialog.owner" placeholder="所属用户（用户名或UID）"></el-input>
+        <el-input v-model.trim="chmodDialog.group" placeholder="所属用户组（组名或GID）"></el-input>
       </div>
       <div class="chmod-grid" :class="{ disabled: !chmodDialog.applyMode }">
         <div class="chmod-row">
@@ -196,7 +181,7 @@
 </template>
 
 <script>
-import { fileList, fileDelete, fileCopy, filePaste, fileMove, fileRename, fileChmod, fileChown, fileUserGroupCandidates } from '@/api/file'
+import { fileList, fileDelete, fileCopy, filePaste, fileMove, fileRename, fileChmod, fileChown } from '@/api/file'
 import request from '@/utils/request'
 import { mapState } from 'vuex'
 
@@ -231,9 +216,6 @@ export default {
       successTotalCount: 0,
       refreshTimer: null,
       copiedItem: null,
-      userCandidates: [],
-      groupCandidates: [],
-      userGroupCacheKey: '',
       contextMenu: {
         visible: false,
         x: 0,
@@ -370,35 +352,6 @@ export default {
       }
       return `${toDigit(bits.owner)}${toDigit(bits.group)}${toDigit(bits.other)}`
     },
-    queryOwnerSuggestions (queryString, cb) {
-      const q = String(queryString || '').toLowerCase()
-      const list = this.userCandidates
-        .filter(v => !q || v.toLowerCase().includes(q))
-        .slice(0, 30)
-        .map(v => ({ value: v }))
-      cb(list)
-    },
-    queryGroupSuggestions (queryString, cb) {
-      const q = String(queryString || '').toLowerCase()
-      const list = this.groupCandidates
-        .filter(v => !q || v.toLowerCase().includes(q))
-        .slice(0, 30)
-        .map(v => ({ value: v }))
-      cb(list)
-    },
-    async ensureUserGroupCandidates () {
-      const sshInfo = this.$store.getters.sshReq
-      if (!sshInfo) return
-      if (this.userGroupCacheKey === sshInfo && (this.userCandidates.length || this.groupCandidates.length)) {
-        return
-      }
-      const result = await fileUserGroupCandidates(sshInfo)
-      if (result && result.Msg === 'success' && result.Data) {
-        this.userCandidates = Array.isArray(result.Data.users) ? result.Data.users : []
-        this.groupCandidates = Array.isArray(result.Data.groups) ? result.Data.groups : []
-        this.userGroupCacheKey = sshInfo
-      }
-    },
     parseOwnerGroup (ownerGroup) {
       const value = String(ownerGroup || '').trim()
       if (!value) {
@@ -520,11 +473,6 @@ export default {
       this.chmodDialog.originOwner = ownerGroup.owner
       this.chmodDialog.originGroup = ownerGroup.group
       this.chmodDialog.bits = this.modeToBits(this.chmodDialog.mode)
-      try {
-        await this.ensureUserGroupCandidates()
-      } catch (e) {
-        // suggestions are optional; ignore fetch failure
-      }
       this.chmodDialog.visible = true
     },
     async submitChmod () {
@@ -1345,17 +1293,6 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.section-title {
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.form-hint {
-  font-size: 12px;
-  line-height: 1.35;
-  color: #6b7280;
 }
 
 .chmod-row {

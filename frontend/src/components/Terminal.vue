@@ -4,12 +4,12 @@
       <div class="terminal-area">
         <div id="xterm-container"></div>
       </div>
-      <div class="file-tree" :class="{ 'is-visible': isSftpVisible }">
+      <div class="sftp-resizer" @mousedown.prevent="startResizeSftp"></div>
+      <div class="file-tree" :class="{ 'is-visible': isSftpVisible }" :style="fileTreeStyle">
         <FileList />
       </div>
     </div>
     <div class="terminal-footer">
-      <span>WebSSH Console | Powered by eooce</span>
       <a href="https://github.com/eooce/webssh" target="_blank" class="github-link" title="GitHub">
         <i class="fab fa-github"></i>
       </a>
@@ -30,6 +30,14 @@ import FileList from '@/components/FileList'
 export default {
     name: 'Terminal',
     components: { FileList },
+    computed: {
+        fileTreeStyle() {
+            if (this.windowWidth <= 768) {
+                return {}
+            }
+            return { width: `${this.sftpWidth}px` }
+        }
+    },
     data() {
         return {
             term: null,
@@ -38,15 +46,58 @@ export default {
             ssh: null,
             savePass: false,
             fontSize: 15,
-            isSftpVisible: false
+            isSftpVisible: false,
+            sftpWidth: 350,
+            minSftpWidth: 260,
+            isResizingSftp: false,
+            resizeStartX: 0,
+            resizeStartWidth: 350,
+            windowWidth: 1024
         }
     },
     mounted() {
+        this.windowWidth = window.innerWidth
+        window.addEventListener('resize', this.handleWindowResize)
         this.$nextTick(() => {
             this.createTerm()
         })
     },
     methods: {
+        handleWindowResize() {
+            this.windowWidth = window.innerWidth
+        },
+        startResizeSftp(e) {
+            if (this.windowWidth <= 768) {
+                return
+            }
+            this.isResizingSftp = true
+            this.resizeStartX = e.clientX
+            this.resizeStartWidth = this.sftpWidth
+            document.addEventListener('mousemove', this.onResizeSftp)
+            document.addEventListener('mouseup', this.stopResizeSftp)
+            document.body.style.cursor = 'col-resize'
+            document.body.style.userSelect = 'none'
+        },
+        onResizeSftp(e) {
+            if (!this.isResizingSftp) {
+                return
+            }
+            const container = document.querySelector('.terminal-page-container')
+            const maxWidth = container ? Math.max(this.minSftpWidth, container.clientWidth - 320) : 720
+            const delta = this.resizeStartX - e.clientX
+            const nextWidth = this.resizeStartWidth + delta
+            this.sftpWidth = Math.min(maxWidth, Math.max(this.minSftpWidth, nextWidth))
+        },
+        stopResizeSftp() {
+            if (!this.isResizingSftp) {
+                return
+            }
+            this.isResizingSftp = false
+            document.removeEventListener('mousemove', this.onResizeSftp)
+            document.removeEventListener('mouseup', this.stopResizeSftp)
+            document.body.style.cursor = ''
+            document.body.style.userSelect = ''
+        },
         toggleSftpPanel() {
             this.isSftpVisible = !this.isSftpVisible
         },
@@ -279,6 +330,8 @@ export default {
         }
     },
     beforeDestroy() {
+        window.removeEventListener('resize', this.handleWindowResize)
+        this.stopResizeSftp()
         this.close()
     }
 }
@@ -313,6 +366,24 @@ export default {
   flex-grow: 1;
   width: 100%;
   padding-left: 2px;
+}
+
+.sftp-resizer {
+  width: 6px;
+  cursor: col-resize;
+  position: relative;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.sftp-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: #dcdfe6;
 }
 
 .file-tree {
@@ -366,6 +437,10 @@ export default {
 }
 
 @media (max-width: 768px) {
+  .sftp-resizer {
+    display: none;
+  }
+
   .sftp-toggle-btn {
     display: inline-block;
   }

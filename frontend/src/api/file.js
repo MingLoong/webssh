@@ -40,3 +40,11 @@ export function fileRename(srcPath, newName, sshInfo) {
     data.append('sshInfo', sshInfo)
     return request.post('/file/rename', data)
 }
+
+export function fileChmod(path, mode, sshInfo) {
+    const data = new URLSearchParams()
+    data.append('path', path)
+    data.append('mode', mode)
+    data.append('sshInfo', sshInfo)
+    return request.post('/file/chmod', data)
+}

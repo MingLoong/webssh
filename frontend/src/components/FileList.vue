@@ -61,7 +61,7 @@
       </div>
     </el-dialog>
 
-    <el-table :data="fileList" class="file-table" @row-click="rowClick" height="100%" stripe border>
+    <el-table :data="fileList" class="file-table" @row-click="rowClick" @row-contextmenu="openRowContextMenu" height="100%" stripe border>
       <el-table-column :label="$t('Name')" width="260" :resizable="true" sortable :sort-method="nameSort">
         <template slot-scope="scope">
           <div class="name-cell" :class="{ 'is-dir': scope.row.IsDir }" :title="scope.row.Name">
@@ -76,6 +76,17 @@
 
     <div v-if="isPanelDragOver" class="drop-mask">
       <div class="drop-mask-content">拖拽文件或文件夹到这里上传到当前目录</div>
+    </div>
+
+    <div
+      v-if="contextMenu.visible"
+      class="context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      @click.stop
+    >
+      <div class="context-menu-item" @click="copyByContext">复制</div>
+      <div class="context-menu-item" :class="{ disabled: !copiedItem }" @click="pasteByContext">粘贴到当前目录</div>
+      <div class="context-menu-item danger" @click="deleteByContext">删除</div>
     </div>
 
     <div v-if="uploadTasks.length" class="task-panel">
@@ -114,7 +125,7 @@
 </template>
 
 <script>
-import { fileList } from '@/api/file'
+import { fileList, fileDelete, fileCopy, filePaste } from '@/api/file'
 import request from '@/utils/request'
 import { mapState } from 'vuex'
 
@@ -147,13 +158,21 @@ export default {
       resumableRetryBaseDelay: 500,
       successKeepLimit: 50,
       successTotalCount: 0,
-      refreshTimer: null
+      refreshTimer: null,
+      copiedItem: null,
+      contextMenu: {
+        visible: false,
+        x: 0,
+        y: 0,
+        row: null
+      }
     }
   },
   mounted () {
     if (!this.currentPath || this.currentPath === '/') {
       this.getFileList()
     }
+    document.addEventListener('click', this.hideContextMenu)
   },
   computed: {
     ...mapState(['currentTab']),
@@ -201,8 +220,75 @@ export default {
       clearTimeout(this.refreshTimer)
       this.refreshTimer = null
     }
+    document.removeEventListener('click', this.hideContextMenu)
   },
   methods: {
+    hideContextMenu () {
+      this.contextMenu.visible = false
+      this.contextMenu.row = null
+    },
+    openRowContextMenu (row, column, event) {
+      event.preventDefault()
+      this.contextMenu.visible = true
+      this.contextMenu.row = row
+      this.contextMenu.x = event.clientX
+      this.contextMenu.y = event.clientY
+    },
+    buildRowPath (row) {
+      if (!row || !row.Name) return ''
+      return this.currentPath.charAt(this.currentPath.length - 1) === '/'
+        ? this.currentPath + row.Name
+        : this.currentPath + '/' + row.Name
+    },
+    async copyByContext () {
+      const row = this.contextMenu.row
+      this.hideContextMenu()
+      const srcPath = this.buildRowPath(row)
+      if (!srcPath) return
+      const result = await fileCopy(srcPath, this.$store.getters.sshReq)
+      if (result.Msg !== 'success') {
+        this.$message.error(result.Msg || '复制失败')
+        return
+      }
+      this.copiedItem = {
+        path: srcPath,
+        name: row.Name
+      }
+      this.$message.success(`已复制：${row.Name}`)
+    },
+    async pasteByContext () {
+      if (!this.copiedItem || !this.copiedItem.path) {
+        return
+      }
+      this.hideContextMenu()
+      const result = await filePaste(this.copiedItem.path, this.currentPath, this.$store.getters.sshReq)
+      if (result.Msg !== 'success') {
+        this.$message.error(result.Msg || '粘贴失败')
+        return
+      }
+      this.$message.success('粘贴成功')
+      this.getFileList()
+    },
+    async deleteByContext () {
+      const row = this.contextMenu.row
+      this.hideContextMenu()
+      const targetPath = this.buildRowPath(row)
+      if (!targetPath) return
+      try {
+        await this.$confirm(`确认删除 ${row.Name} 吗？`, '提示', {
+          type: 'warning'
+        })
+      } catch (e) {
+        return
+      }
+      const result = await fileDelete(targetPath, this.$store.getters.sshReq)
+      if (result.Msg !== 'success') {
+        this.$message.error(result.Msg || '删除失败')
+        return
+      }
+      this.$message.success('删除成功')
+      this.getFileList()
+    },
     createUploadTask (file, dir = '', uid = '', keepFileRef = false) {
       const fullName = dir ? `${dir}/${file.name}` : file.name
       const task = {
@@ -904,6 +990,39 @@ export default {
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 600;
+}
+
+.context-menu {
+  position: fixed;
+  min-width: 150px;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  z-index: 120;
+  padding: 4px 0;
+}
+
+.context-menu-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  user-select: none;
+}
+
+.context-menu-item:hover {
+  background: #f3f4f6;
+}
+
+.context-menu-item.danger {
+  color: #dc2626;
+}
+
+.context-menu-item.disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .task-panel {

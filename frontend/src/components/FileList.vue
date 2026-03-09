@@ -29,7 +29,6 @@
             <el-table-column
                 :label="$t('Name')"
                 width="260"
-                show-overflow-tooltip
                 :resizable="true"
                 sortable :sort-method="nameSort">
                 <template slot-scope="scope">

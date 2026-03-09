@@ -32,7 +32,14 @@ export default {
       if (this.windowWidth <= 768) {
         return {}
       }
-      return { width: `${this.sftpWidth}px` }
+      const maxWidth = this.getSftpMaxWidth()
+      const width = Math.min(maxWidth, Math.max(this.minSftpWidth, this.sftpWidth))
+      return {
+        width: `${width}px`,
+        flex: `0 0 ${width}px`,
+        minWidth: `${this.minSftpWidth}px`,
+        maxWidth: `${maxWidth}px`
+      }
     }
   },
   data () {
@@ -62,6 +69,16 @@ export default {
   methods: {
     handleWindowResize () {
       this.windowWidth = window.innerWidth
+      if (this.windowWidth > 768) {
+        this.sftpWidth = Math.min(this.sftpWidth, this.getSftpMaxWidth())
+      }
+    },
+    getSftpMaxWidth () {
+      const container = document.querySelector('.terminal-page-container')
+      if (!container) {
+        return 720
+      }
+      return Math.max(this.minSftpWidth, container.clientWidth - 220)
     },
     startResizeSftp (e) {
       if (this.windowWidth <= 768) {
@@ -79,8 +96,7 @@ export default {
       if (!this.isResizingSftp) {
         return
       }
-      const container = document.querySelector('.terminal-page-container')
-      const maxWidth = container ? Math.max(this.minSftpWidth, container.clientWidth - 320) : 720
+      const maxWidth = this.getSftpMaxWidth()
       const delta = this.resizeStartX - e.clientX
       const nextWidth = this.resizeStartWidth + delta
       this.sftpWidth = Math.min(maxWidth, Math.max(this.minSftpWidth, nextWidth))
@@ -102,8 +118,7 @@ export default {
       if (this.windowWidth <= 768) {
         return
       }
-      const container = document.querySelector('.terminal-page-container')
-      const maxWidth = container ? Math.max(this.minSftpWidth, container.clientWidth - 320) : 720
+      const maxWidth = this.getSftpMaxWidth()
       const nextWidth = this.sftpWidth + delta
       this.sftpWidth = Math.min(maxWidth, Math.max(this.minSftpWidth, nextWidth))
     },
@@ -367,6 +382,7 @@ export default {
   flex-grow: 1;
   min-height: 0;
   overflow: hidden;
+  align-items: stretch;
   background: #f7f8fa;
 }
 
@@ -388,6 +404,7 @@ export default {
   width: 6px;
   cursor: col-resize;
   position: relative;
+  align-self: stretch;
   flex-shrink: 0;
   background: #f7f8fa;
 }
@@ -404,6 +421,8 @@ export default {
 
 .file-tree {
   width: 350px;
+  height: 100%;
+  box-sizing: border-box;
   border-left: 1px solid var(--input-border);
   background: #ffffff;
   display: flex;

@@ -25,18 +25,21 @@
             </el-upload>
         </el-dialog>
         
-        <el-table :data="fileList" class="file-table" @row-click="rowClick" height="100%">
+        <el-table :data="fileList" class="file-table" @row-click="rowClick" height="100%" stripe>
             <el-table-column
                 :label="$t('Name')"
-                width="140"
+                min-width="220"
+                show-overflow-tooltip
                 sortable :sort-method="nameSort">
                 <template slot-scope="scope">
-                    <p v-if="scope.row.IsDir === true" style="color:#0c60b5;cursor:pointer;" class="el-icon-folder"> {{ scope.row.Name }}</p>
-                    <p v-else-if="scope.row.IsDir === false" style="cursor: pointer" class="el-icon-document"> {{ scope.row.Name }}</p>
+                    <div class="name-cell" :class="{ 'is-dir': scope.row.IsDir }" :title="scope.row.Name">
+                        <i :class="scope.row.IsDir ? 'el-icon-folder' : 'el-icon-document'"></i>
+                        <span class="name-text">{{ scope.row.Name }}</span>
+                    </div>
                 </template>
             </el-table-column>
-            <el-table-column :label="$t('Size')" prop="Size" width="80"></el-table-column>
-            <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" width="120" sortable></el-table-column>
+            <el-table-column :label="$t('Size')" prop="Size" width="90"></el-table-column>
+            <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" width="160" sortable show-overflow-tooltip></el-table-column>
         </el-table>
     </div>
 </template>
@@ -274,26 +277,44 @@ export default {
         & .el-table__body-wrapper {
             height: calc(100% - 40px) !important; /* Adjust based on header height */
         }
-        /* --- Style Customization for Compact Look --- */
+
         &.el-table th {
-            height: 40px;
-            padding: 0;
+            height: 44px;
+            padding: 0 6px;
         }
         &.el-table td {
-            padding: 0;
+            padding: 0 6px;
         }
         .cell {
-            padding: 1px 0px 2px 5px;
-            line-height: 1.1;
-            p {
-              margin: 0;
-            }
+            padding: 8px 2px;
+            line-height: 20px;
         }
         th > .cell {
             display: flex;
             align-items: center;
         }
-        /* --- End Customization --- */
+
+        .name-cell {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            cursor: pointer;
+        }
+
+        .name-cell.is-dir {
+            color: #0c60b5;
+            font-weight: 500;
+        }
+
+        .name-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: inline-block;
+            min-width: 0;
+            flex: 1;
+        }
     }
 }
 .uploadContainer {

@@ -1,16 +1,16 @@
 name: Build and Release
 
-on:
+于:
   workflow_dispatch:
     inputs:
       tag:
         description: 'Release tag (e.g., v1.0.0)'
         required: true
-        默认: 'v1.0.0'
+        default: 'v1.0.0'
       release_notes:
         description: 'Release notes'
         required: false
-        默认: ''
+        default: ''
 
 permissions:
   contents: write

@@ -107,6 +107,7 @@
       </div>
 
       <div class="form-section">
+        <div class="field-caption">权限值（八进制）</div>
         <el-input
           v-model.trim="chmodDialog.mode"
           :disabled="!chmodDialog.applyMode"
@@ -116,10 +117,13 @@
       </div>
 
       <div class="chown-form">
+        <div class="field-caption">所属用户</div>
         <el-input v-model.trim="chmodDialog.owner" placeholder="所属用户（用户名或UID）"></el-input>
+        <div class="field-caption">所属用户组</div>
         <el-input v-model.trim="chmodDialog.group" placeholder="所属用户组（组名或GID）"></el-input>
       </div>
       <div class="chmod-grid" :class="{ disabled: !chmodDialog.applyMode }">
+        <div class="field-caption">勾选权限位</div>
         <div class="chmod-row">
           <span class="chmod-label">所有者</span>
           <label><input type="checkbox" :disabled="!chmodDialog.applyMode" v-model="chmodDialog.bits.owner.r" @change="onChmodBitsChange"> 读</label>
@@ -1293,6 +1297,12 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.field-caption {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.2;
 }
 
 .chmod-row {

@@ -80,7 +80,7 @@
 
     <div v-if="uploadTasks.length" class="task-panel">
       <div class="task-panel-header">
-        <span class="task-summary">上传任务：等待 {{ queuedCount }}，上传中 {{ uploadingCount }}，成功累计 {{ successTotalCount }}</span>
+        <span class="task-summary">上传任务：等待 {{ queuedCount }}，上传中 {{ uploadingCount }}，失败 {{ failedCount }}，成功累计 {{ successTotalCount }}</span>
         <div class="task-panel-actions">
           <span class="concurrency-label">并发</span>
           <el-button-group class="concurrency-group">
@@ -88,13 +88,6 @@
             <el-button size="mini" class="concurrency-value" @click="resetConcurrent">{{ maxConcurrentUploads }}</el-button>
             <el-button size="mini" icon="el-icon-plus" @click="incrementConcurrent" />
           </el-button-group>
-          <span class="concurrency-label">成功保留</span>
-          <el-input
-            v-model.number="successKeepLimit"
-            size="mini"
-            class="success-keep-input"
-            @blur="normalizeSuccessKeepLimit"
-          />
           <el-button type="text" @click="retryAllFailedTasks">重试失败</el-button>
           <el-button type="text" @click="clearFinishedTasks">清理已完成</el-button>
         </div>
@@ -180,6 +173,9 @@ export default {
     },
     uploadingCount () {
       return this.uploadTasks.filter(v => v.status === 'uploading').length
+    },
+    failedCount () {
+      return this.uploadTasks.filter(v => v.status === 'failed').length
     }
   },
   watch: {
@@ -194,9 +190,6 @@ export default {
     },
     maxConcurrentUploads () {
       this.processUploadQueue()
-    },
-    successKeepLimit () {
-      this.pruneSuccessTasks()
     }
   },
   beforeDestroy () {
@@ -239,14 +232,6 @@ export default {
     },
     resetConcurrent () {
       this.maxConcurrentUploads = 2
-    },
-    normalizeSuccessKeepLimit () {
-      const n = Number(this.successKeepLimit)
-      if (!Number.isFinite(n)) {
-        this.successKeepLimit = 200
-        return
-      }
-      this.successKeepLimit = Math.min(5000, Math.max(0, Math.floor(n)))
     },
     retryTask (task) {
       if (!task || !task.file) {
@@ -854,10 +839,6 @@ export default {
 .concurrency-group .concurrency-value {
   min-width: 38px;
   padding: 7px 8px;
-}
-
-.success-keep-input {
-  width: 64px;
 }
 
 .task-list {

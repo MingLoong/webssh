@@ -20,6 +20,8 @@ type File struct {
 	Name       string
 	Size       string
 	ModifyTime string
+	Permission string
+	OwnerGroup string
 	IsDir      bool
 }
 
@@ -291,7 +293,19 @@ func FileList(c *gin.Context) *ResponseBody {
 		} else {
 			fileSize = Bytefmt(uint64(mFile.Size()))
 		}
-		file := File{Name: mFile.Name(), IsDir: mFile.IsDir(), Size: fileSize, ModifyTime: mFile.ModTime().Format("2006-01-02 15:04:05")}
+		permission := mFile.Mode().String()
+		ownerGroup := "-"
+		if stat, ok := mFile.Sys().(*sftp.FileStat); ok {
+			ownerGroup = fmt.Sprintf("%d:%d", stat.UID, stat.GID)
+		}
+		file := File{
+			Name:       mFile.Name(),
+			IsDir:      mFile.IsDir(),
+			Size:       fileSize,
+			ModifyTime: mFile.ModTime().Format("2006-01-02 15:04:05"),
+			Permission: permission,
+			OwnerGroup: ownerGroup,
+		}
 		fileList = append(fileList, file)
 	}
 	sort.Stable(fileList)

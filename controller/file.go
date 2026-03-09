@@ -209,10 +209,11 @@ func UploadProgressWs(c *gin.Context) *ResponseBody {
 
 	var ready, find bool
 	for {
-		if !ready && core.WcList == nil {
+		counters := core.SnapshotWriteCounters()
+		if !ready && len(counters) == 0 {
 			continue
 		}
-		for _, v := range core.WcList {
+		for _, v := range counters {
 			if v.Id == id {
 				wsConn.WriteMessage(1, []byte(strconv.Itoa(v.Total)))
 				find = true

@@ -6,7 +6,7 @@
       </div>
       <div class="sftp-resizer" @mousedown.prevent="startResizeSftp"></div>
       <div class="file-tree" :class="{ 'is-visible': isSftpVisible }" :style="fileTreeStyle">
-        <FileList />
+        <FileList @adjust-width="adjustSftpWidth" />
       </div>
     </div>
     <div class="terminal-footer">
@@ -98,6 +98,15 @@ export default {
     toggleSftpPanel () {
       this.isSftpVisible = !this.isSftpVisible
     },
+    adjustSftpWidth (delta) {
+      if (this.windowWidth <= 768) {
+        return
+      }
+      const container = document.querySelector('.terminal-page-container')
+      const maxWidth = container ? Math.max(this.minSftpWidth, container.clientWidth - 320) : 720
+      const nextWidth = this.sftpWidth + delta
+      this.sftpWidth = Math.min(maxWidth, Math.max(this.minSftpWidth, nextWidth))
+    },
     setSSH () {
       this.$store.commit('SET_SSH', this.ssh)
     },
@@ -145,7 +154,7 @@ export default {
       try {
         fitAddon.fit()
       } catch (e) {
-        // Ignore transient fit errors during initial render.
+        console.warn('xterm fit failed on initial render:', e)
       }
 
       const self = this
@@ -227,7 +236,9 @@ export default {
         }
       }
 
-      this.ws.onerror = () => {}
+      this.ws.onerror = (e) => {
+        console.warn('websocket error:', e)
+      }
 
       const attachAddon = new AttachAddon(this.ws, { bidirectional: false })
       this.term.loadAddon(attachAddon)
@@ -265,7 +276,7 @@ export default {
           try {
             fitAddon.fit()
           } catch (e) {
-            // Ignore transient fit errors during resize.
+            console.warn('xterm fit failed on wheel resize:', e)
           }
           if (self.ws !== null && self.ws.readyState === 1) {
             self.ws.send(`resize:${self.term.rows}:${self.term.cols}`)
@@ -277,7 +288,7 @@ export default {
         try {
           fitAddon.fit()
         } catch (e) {
-          // Ignore transient fit errors during resize.
+          console.warn('xterm fit failed on window resize:', e)
         }
         if (self.ws !== null && self.ws.readyState === 1) {
           self.ws.send(`resize:${self.term.rows}:${self.term.cols}`)

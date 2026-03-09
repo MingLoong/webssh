@@ -94,8 +94,15 @@
       <div class="context-menu-item danger" @click="deleteByContext">删除</div>
     </div>
 
-    <el-dialog title="修改权限" :visible.sync="chmodDialog.visible" width="320px" append-to-body>
+    <el-dialog title="修改权限/属主" :visible.sync="chmodDialog.visible" width="360px" append-to-body>
+      <div class="chmod-options">
+        <el-checkbox v-model="chmodDialog.applyMode">同时修改权限</el-checkbox>
+      </div>
       <el-input v-model.trim="chmodDialog.mode" placeholder="例如 755" @input="onChmodModeInput"></el-input>
+      <div class="chown-form">
+        <el-input v-model.trim="chmodDialog.owner" placeholder="所属用户（用户名或UID）"></el-input>
+        <el-input v-model.trim="chmodDialog.group" placeholder="所属用户组（组名或GID）"></el-input>
+      </div>
       <div class="chmod-grid">
         <div class="chmod-row">
           <span class="chmod-label">所有者</span>
@@ -158,7 +165,7 @@
 </template>
 
 <script>
-import { fileList, fileDelete, fileCopy, filePaste, fileMove, fileRename, fileChmod } from '@/api/file'
+import { fileList, fileDelete, fileCopy, filePaste, fileMove, fileRename, fileChmod, fileChown } from '@/api/file'
 import request from '@/utils/request'
 import { mapState } from 'vuex'
 
@@ -202,7 +209,12 @@ export default {
       chmodDialog: {
         visible: false,
         path: '',
+        applyMode: true,
         mode: '',
+        owner: '',
+        group: '',
+        originOwner: '',
+        originGroup: '',
         bits: {
           owner: { r: true, w: true, x: true },
           group: { r: true, w: false, x: true },
@@ -323,6 +335,20 @@ export default {
       }
       return `${toDigit(bits.owner)}${toDigit(bits.group)}${toDigit(bits.other)}`
     },
+    parseOwnerGroup (ownerGroup) {
+      const value = String(ownerGroup || '').trim()
+      if (!value) {
+        return { owner: '', group: '' }
+      }
+      const idx = value.indexOf(':')
+      if (idx < 0) {
+        return { owner: value, group: '' }
+      }
+      return {
+        owner: value.slice(0, idx),
+        group: value.slice(idx + 1)
+      }
+    },
     onChmodModeInput () {
       this.chmodDialog.bits = this.modeToBits(this.chmodDialog.mode)
       this.chmodDialog.mode = this.bitsToMode(this.chmodDialog.bits)
@@ -420,24 +446,56 @@ export default {
       this.hideContextMenu()
       const targetPath = this.buildRowPath(row)
       if (!targetPath) return
+      const ownerGroup = this.parseOwnerGroup(row && row.OwnerGroup)
       this.chmodDialog.path = targetPath
+      this.chmodDialog.applyMode = true
       this.chmodDialog.mode = this.permissionTextToOctal(row && row.Permission)
+      this.chmodDialog.owner = ownerGroup.owner
+      this.chmodDialog.group = ownerGroup.group
+      this.chmodDialog.originOwner = ownerGroup.owner
+      this.chmodDialog.originGroup = ownerGroup.group
       this.chmodDialog.bits = this.modeToBits(this.chmodDialog.mode)
       this.chmodDialog.visible = true
     },
     async submitChmod () {
       const mode = (this.chmodDialog.mode || '').trim()
-      if (!/^[0-7]{3,4}$/.test(mode)) {
-        this.$message.warning('权限格式错误，请输入 3-4 位八进制数字，例如 755')
+      const owner = String(this.chmodDialog.owner || '').trim()
+      const group = String(this.chmodDialog.group || '').trim()
+      const ownerChanged = owner !== String(this.chmodDialog.originOwner || '').trim()
+      const groupChanged = group !== String(this.chmodDialog.originGroup || '').trim()
+      const hasChownChange = ownerChanged || groupChanged
+      if (!this.chmodDialog.applyMode && !hasChownChange) {
+        this.$message.warning('未检测到需要修改的内容')
         return
       }
-      const result = await fileChmod(this.chmodDialog.path, mode, this.$store.getters.sshReq)
-      if (result.Msg !== 'success') {
-        this.$message.error(result.Msg || '修改权限失败')
-        return
+
+      if (this.chmodDialog.applyMode) {
+        if (!/^[0-7]{3,4}$/.test(mode)) {
+          this.$message.warning('权限格式错误，请输入 3-4 位八进制数字，例如 755')
+          return
+        }
+        const chmodResult = await fileChmod(this.chmodDialog.path, mode, this.$store.getters.sshReq)
+        if (chmodResult.Msg !== 'success') {
+          this.$message.error(chmodResult.Msg || '修改权限失败')
+          return
+        }
+      }
+
+      if (hasChownChange) {
+        const chownResult = await fileChown(this.chmodDialog.path, owner, group, this.$store.getters.sshReq)
+        if (chownResult.Msg !== 'success') {
+          this.$message.error(chownResult.Msg || '修改属主失败')
+          return
+        }
       }
       this.chmodDialog.visible = false
-      this.$message.success('修改权限成功')
+      if (this.chmodDialog.applyMode && hasChownChange) {
+        this.$message.success('权限和属主修改成功')
+      } else if (this.chmodDialog.applyMode) {
+        this.$message.success('修改权限成功')
+      } else {
+        this.$message.success('修改属主成功')
+      }
       this.getFileList()
     },
     createUploadTask (file, dir = '', uid = '', keepFileRef = false) {
@@ -1182,6 +1240,17 @@ export default {
   border-radius: 6px;
   padding: 8px;
   background: #fafafa;
+}
+
+.chown-form {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chmod-options {
+  margin-bottom: 8px;
 }
 
 .chmod-row {

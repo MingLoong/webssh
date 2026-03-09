@@ -89,12 +89,11 @@
             <el-button size="mini" icon="el-icon-plus" @click="incrementConcurrent" />
           </el-button-group>
           <span class="concurrency-label">成功保留</span>
-          <el-input-number
-            v-model="successKeepLimit"
-            :min="0"
-            :max="5000"
+          <el-input
+            v-model.number="successKeepLimit"
             size="mini"
-            controls-position="right"
+            class="success-keep-input"
+            @blur="normalizeSuccessKeepLimit"
           />
           <el-button type="text" @click="retryAllFailedTasks">重试失败</el-button>
           <el-button type="text" @click="clearFinishedTasks">清理已完成</el-button>
@@ -242,6 +241,14 @@ export default {
     },
     resetConcurrent () {
       this.maxConcurrentUploads = 2
+    },
+    normalizeSuccessKeepLimit () {
+      const n = Number(this.successKeepLimit)
+      if (!Number.isFinite(n)) {
+        this.successKeepLimit = 200
+        return
+      }
+      this.successKeepLimit = Math.min(5000, Math.max(0, Math.floor(n)))
     },
     retryTask (task) {
       if (!task || !task.file) {
@@ -833,6 +840,10 @@ export default {
 .concurrency-group .concurrency-value {
   min-width: 38px;
   padding: 7px 8px;
+}
+
+.success-keep-input {
+  width: 74px;
 }
 
 .task-list {

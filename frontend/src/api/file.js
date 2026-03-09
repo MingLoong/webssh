@@ -41,19 +41,25 @@ export function fileRename(srcPath, newName, sshInfo) {
     return request.post('/file/rename', data)
 }
 
-export function fileChmod(path, mode, sshInfo) {
+export function fileChmod(path, mode, sshInfo, recursive = false) {
     const data = new URLSearchParams()
     data.append('path', path)
     data.append('mode', mode)
     data.append('sshInfo', sshInfo)
+    data.append('recursive', recursive ? 'true' : 'false')
     return request.post('/file/chmod', data)
 }
 
-export function fileChown(path, owner, group, sshInfo) {
+export function fileChown(path, owner, group, sshInfo, recursive = false) {
     const data = new URLSearchParams()
     data.append('path', path)
     data.append('owner', owner)
     data.append('group', group)
     data.append('sshInfo', sshInfo)
+    data.append('recursive', recursive ? 'true' : 'false')
     return request.post('/file/chown', data)
+}
+
+export function fileUserGroupCandidates(sshInfo) {
+    return request.get(`/file/usergroup?sshInfo=${sshInfo}`)
 }

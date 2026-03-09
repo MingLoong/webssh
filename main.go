@@ -132,6 +132,9 @@ func main() {
 		file.POST("/chown", func(c *gin.Context) {
 			c.JSON(200, controller.ChownFileOrDir(c))
 		})
+		file.GET("/usergroup", func(c *gin.Context) {
+			c.JSON(200, controller.ListUserGroupCandidates(c))
+		})
 		file.POST("/delete", func(c *gin.Context) {
 			c.JSON(200, controller.DeleteFileOrDir(c))
 		})

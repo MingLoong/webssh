@@ -100,6 +100,10 @@
           <input type="checkbox" v-model="chmodDialog.applyMode">
           <span>同时修改权限</span>
         </label>
+        <label class="mode-toggle mode-toggle-recursive">
+          <input type="checkbox" v-model="chmodDialog.recursive">
+          <span>递归应用到子目录/文件</span>
+        </label>
         <div class="form-hint">勾选后会提交权限（八进制+下方勾选项），取消则只修改所属用户/组。</div>
       </div>
 
@@ -116,8 +120,18 @@
 
       <div class="chown-form">
         <div class="section-title">属主设置</div>
-        <el-input v-model.trim="chmodDialog.owner" placeholder="所属用户（用户名或UID）"></el-input>
-        <el-input v-model.trim="chmodDialog.group" placeholder="所属用户组（组名或GID）"></el-input>
+        <el-autocomplete
+          v-model.trim="chmodDialog.owner"
+          :fetch-suggestions="queryOwnerSuggestions"
+          :trigger-on-focus="true"
+          placeholder="所属用户（用户名或UID）"
+        />
+        <el-autocomplete
+          v-model.trim="chmodDialog.group"
+          :fetch-suggestions="queryGroupSuggestions"
+          :trigger-on-focus="true"
+          placeholder="所属用户组（组名或GID）"
+        />
         <div class="form-hint">可单独修改用户或用户组，留空代表保持当前值不变。</div>
       </div>
       <div class="chmod-grid" :class="{ disabled: !chmodDialog.applyMode }">
@@ -182,7 +196,7 @@
 </template>
 
 <script>
-import { fileList, fileDelete, fileCopy, filePaste, fileMove, fileRename, fileChmod, fileChown } from '@/api/file'
+import { fileList, fileDelete, fileCopy, filePaste, fileMove, fileRename, fileChmod, fileChown, fileUserGroupCandidates } from '@/api/file'
 import request from '@/utils/request'
 import { mapState } from 'vuex'
 
@@ -217,6 +231,9 @@ export default {
       successTotalCount: 0,
       refreshTimer: null,
       copiedItem: null,
+      userCandidates: [],
+      groupCandidates: [],
+      userGroupCacheKey: '',
       contextMenu: {
         visible: false,
         x: 0,
@@ -227,6 +244,7 @@ export default {
         visible: false,
         path: '',
         applyMode: true,
+        recursive: false,
         mode: '',
         owner: '',
         group: '',
@@ -352,6 +370,35 @@ export default {
       }
       return `${toDigit(bits.owner)}${toDigit(bits.group)}${toDigit(bits.other)}`
     },
+    queryOwnerSuggestions (queryString, cb) {
+      const q = String(queryString || '').toLowerCase()
+      const list = this.userCandidates
+        .filter(v => !q || v.toLowerCase().includes(q))
+        .slice(0, 30)
+        .map(v => ({ value: v }))
+      cb(list)
+    },
+    queryGroupSuggestions (queryString, cb) {
+      const q = String(queryString || '').toLowerCase()
+      const list = this.groupCandidates
+        .filter(v => !q || v.toLowerCase().includes(q))
+        .slice(0, 30)
+        .map(v => ({ value: v }))
+      cb(list)
+    },
+    async ensureUserGroupCandidates () {
+      const sshInfo = this.$store.getters.sshReq
+      if (!sshInfo) return
+      if (this.userGroupCacheKey === sshInfo && (this.userCandidates.length || this.groupCandidates.length)) {
+        return
+      }
+      const result = await fileUserGroupCandidates(sshInfo)
+      if (result && result.Msg === 'success' && result.Data) {
+        this.userCandidates = Array.isArray(result.Data.users) ? result.Data.users : []
+        this.groupCandidates = Array.isArray(result.Data.groups) ? result.Data.groups : []
+        this.userGroupCacheKey = sshInfo
+      }
+    },
     parseOwnerGroup (ownerGroup) {
       const value = String(ownerGroup || '').trim()
       if (!value) {
@@ -458,7 +505,7 @@ export default {
       this.$message.success('重命名成功')
       this.getFileList()
     },
-    chmodByContext () {
+    async chmodByContext () {
       const row = this.contextMenu.row
       this.hideContextMenu()
       const targetPath = this.buildRowPath(row)
@@ -466,16 +513,23 @@ export default {
       const ownerGroup = this.parseOwnerGroup(row && row.OwnerGroup)
       this.chmodDialog.path = targetPath
       this.chmodDialog.applyMode = true
+      this.chmodDialog.recursive = false
       this.chmodDialog.mode = this.permissionTextToOctal(row && row.Permission)
       this.chmodDialog.owner = ownerGroup.owner
       this.chmodDialog.group = ownerGroup.group
       this.chmodDialog.originOwner = ownerGroup.owner
       this.chmodDialog.originGroup = ownerGroup.group
       this.chmodDialog.bits = this.modeToBits(this.chmodDialog.mode)
+      try {
+        await this.ensureUserGroupCandidates()
+      } catch (e) {
+        // suggestions are optional; ignore fetch failure
+      }
       this.chmodDialog.visible = true
     },
     async submitChmod () {
       const mode = (this.chmodDialog.mode || '').trim()
+      const recursive = Boolean(this.chmodDialog.recursive)
       const owner = String(this.chmodDialog.owner || '').trim()
       const group = String(this.chmodDialog.group || '').trim()
       const ownerChanged = owner !== String(this.chmodDialog.originOwner || '').trim()
@@ -491,7 +545,7 @@ export default {
           this.$message.warning('权限格式错误，请输入 3-4 位八进制数字，例如 755')
           return
         }
-        const chmodResult = await fileChmod(this.chmodDialog.path, mode, this.$store.getters.sshReq)
+        const chmodResult = await fileChmod(this.chmodDialog.path, mode, this.$store.getters.sshReq, recursive)
         if (chmodResult.Msg !== 'success') {
           this.$message.error(chmodResult.Msg || '修改权限失败')
           return
@@ -499,19 +553,20 @@ export default {
       }
 
       if (hasChownChange) {
-        const chownResult = await fileChown(this.chmodDialog.path, owner, group, this.$store.getters.sshReq)
+        const chownResult = await fileChown(this.chmodDialog.path, owner, group, this.$store.getters.sshReq, recursive)
         if (chownResult.Msg !== 'success') {
           this.$message.error(chownResult.Msg || '修改属主失败')
           return
         }
       }
       this.chmodDialog.visible = false
+      const recursiveText = recursive ? '（含递归）' : ''
       if (this.chmodDialog.applyMode && hasChownChange) {
-        this.$message.success('权限和属主修改成功')
+        this.$message.success(`权限和属主修改成功${recursiveText}`)
       } else if (this.chmodDialog.applyMode) {
-        this.$message.success('修改权限成功')
+        this.$message.success(`修改权限成功${recursiveText}`)
       } else {
-        this.$message.success('修改属主成功')
+        this.$message.success(`修改属主成功${recursiveText}`)
       }
       this.getFileList()
     },
@@ -1268,6 +1323,9 @@ export default {
 
 .chmod-options {
   margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .mode-toggle {
@@ -1277,6 +1335,10 @@ export default {
   font-size: 13px;
   color: #111827;
   font-weight: 600;
+}
+
+.mode-toggle-recursive {
+  font-weight: 500;
 }
 
 .form-section {

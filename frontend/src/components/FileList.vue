@@ -80,7 +80,7 @@
 
     <div v-if="uploadTasks.length" class="task-panel">
       <div class="task-panel-header">
-        <span>上传任务（等待 {{ queuedCount }}，上传中 {{ uploadingCount }}，成功 {{ successCount }}）</span>
+        <span class="task-summary">上传任务：等待 {{ queuedCount }}，上传中 {{ uploadingCount }}，成功累计 {{ successTotalCount }}</span>
         <div class="task-panel-actions">
           <span class="concurrency-label">并发</span>
           <el-button-group class="concurrency-group">
@@ -149,6 +149,7 @@ export default {
       activeUploadCount: 0,
       maxConcurrentUploads: 2,
       successKeepLimit: 50,
+      successTotalCount: 0,
       refreshTimer: null
     }
   },
@@ -179,9 +180,6 @@ export default {
     },
     uploadingCount () {
       return this.uploadTasks.filter(v => v.status === 'uploading').length
-    },
-    successCount () {
-      return this.uploadTasks.filter(v => v.status === 'success').length
     }
   },
   watch: {
@@ -281,6 +279,20 @@ export default {
     },
     clearFinishedTasks () {
       this.uploadTasks = this.uploadTasks.filter(v => v.status === 'uploading' || v.status === 'queued')
+      this.successTotalCount = 0
+    },
+    markTaskSuccess (task) {
+      if (!task) return
+      const wasSuccess = task.status === 'success'
+      task.status = 'success'
+      task.progress = 100
+      task.message = ''
+      task.file = null
+      task.dir = ''
+      if (!wasSuccess) {
+        this.successTotalCount += 1
+      }
+      this.pruneSuccessTasks()
     },
     pruneSuccessTasks () {
       const keep = Math.max(0, Number(this.successKeepLimit) || 0)
@@ -521,13 +533,7 @@ export default {
           if (option.resolve) option.resolve(false)
           return
         }
-        task.status = 'success'
-        task.progress = 100
-        task.message = ''
-        // Release large Blob/File references after successful upload.
-        task.file = null
-        task.dir = ''
-        this.pruneSuccessTasks()
+        this.markTaskSuccess(task)
         if (option.onSuccess) option.onSuccess(result, file)
         if (option.resolve) option.resolve(true)
         this.scheduleFileListRefresh()
@@ -596,12 +602,7 @@ export default {
       const task = this.getUploadTaskByUid(file.uid)
       if (task) {
         if (r && r.Msg === 'success') {
-          task.status = 'success'
-          task.progress = 100
-          task.message = ''
-          task.file = null
-          task.dir = ''
-          this.pruneSuccessTasks()
+          this.markTaskSuccess(task)
         } else {
           task.status = 'failed'
           task.message = (r && r.Msg) || '上传失败'
@@ -824,17 +825,24 @@ export default {
 
 .task-panel-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   font-size: 13px;
   font-weight: 600;
   color: #374151;
   margin-bottom: 6px;
 }
 
+.task-summary {
+  line-height: 1.4;
+  word-break: break-all;
+}
+
 .task-panel-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -849,7 +857,7 @@ export default {
 }
 
 .success-keep-input {
-  width: 74px;
+  width: 64px;
 }
 
 .task-list {

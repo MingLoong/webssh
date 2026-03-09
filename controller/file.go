@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net/http"
@@ -287,6 +288,7 @@ func FileList(c *gin.Context) *ResponseBody {
 		fileList fileSplice
 		fileSize string
 	)
+	userMap, groupMap := loadRemoteUserGroupMaps(sshClient.Sftp)
 	for _, mFile := range files {
 		if mFile.IsDir() {
 			fileSize = strconv.FormatInt(mFile.Size(), 10)
@@ -296,7 +298,9 @@ func FileList(c *gin.Context) *ResponseBody {
 		permission := mFile.Mode().String()
 		ownerGroup := "-"
 		if stat, ok := mFile.Sys().(*sftp.FileStat); ok {
-			ownerGroup = fmt.Sprintf("%d:%d", stat.UID, stat.GID)
+			userName := resolveRemoteUserName(stat.UID, userMap)
+			groupName := resolveRemoteGroupName(stat.GID, groupMap)
+			ownerGroup = fmt.Sprintf("%s:%s", userName, groupName)
 		}
 		file := File{
 			Name:       mFile.Name(),
@@ -314,6 +318,68 @@ func FileList(c *gin.Context) *ResponseBody {
 		"home": home, // home 字段始终返回 home 目录
 	}
 	return &responseBody
+}
+
+func loadRemoteUserGroupMaps(sftpClient *sftp.Client) (map[uint32]string, map[uint32]string) {
+	userMap := make(map[uint32]string)
+	groupMap := make(map[uint32]string)
+
+	// /etc/passwd format: name:x:uid:gid:...
+	if f, err := sftpClient.Open("/etc/passwd"); err == nil {
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.Split(line, ":")
+			if len(parts) < 4 {
+				continue
+			}
+			uid64, err := strconv.ParseUint(parts[2], 10, 32)
+			if err != nil {
+				continue
+			}
+			userMap[uint32(uid64)] = parts[0]
+		}
+		_ = f.Close()
+	}
+
+	// /etc/group format: name:x:gid:...
+	if f, err := sftpClient.Open("/etc/group"); err == nil {
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.Split(line, ":")
+			if len(parts) < 3 {
+				continue
+			}
+			gid64, err := strconv.ParseUint(parts[2], 10, 32)
+			if err != nil {
+				continue
+			}
+			groupMap[uint32(gid64)] = parts[0]
+		}
+		_ = f.Close()
+	}
+	return userMap, groupMap
+}
+
+func resolveRemoteUserName(uid uint32, userMap map[uint32]string) string {
+	if name, ok := userMap[uid]; ok && name != "" {
+		return name
+	}
+	return strconv.FormatUint(uint64(uid), 10)
+}
+
+func resolveRemoteGroupName(gid uint32, groupMap map[uint32]string) string {
+	if name, ok := groupMap[gid]; ok && name != "" {
+		return name
+	}
+	return strconv.FormatUint(uint64(gid), 10)
 }
 
 // 自动检测home目录

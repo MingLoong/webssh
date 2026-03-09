@@ -249,6 +249,7 @@ export default {
       this.getFileList()
     }
     document.addEventListener('click', this.hideContextMenu)
+    window.addEventListener('resize', this.hideContextMenu)
   },
   computed: {
     ...mapState(['currentTab']),
@@ -297,6 +298,7 @@ export default {
       this.refreshTimer = null
     }
     document.removeEventListener('click', this.hideContextMenu)
+    window.removeEventListener('resize', this.hideContextMenu)
   },
   methods: {
     hideContextMenu () {
@@ -305,10 +307,24 @@ export default {
     },
     openRowContextMenu (row, column, event) {
       event.preventDefault()
+      event.stopPropagation()
       this.contextMenu.visible = true
       this.contextMenu.row = row
       this.contextMenu.x = event.clientX
       this.contextMenu.y = event.clientY
+      this.$nextTick(() => {
+        const menuEl = this.$el && this.$el.querySelector
+          ? this.$el.querySelector('.context-menu')
+          : null
+        if (!menuEl) return
+        const padding = 8
+        const menuWidth = menuEl.offsetWidth || 160
+        const menuHeight = menuEl.offsetHeight || 220
+        const maxX = Math.max(padding, window.innerWidth - menuWidth - padding)
+        const maxY = Math.max(padding, window.innerHeight - menuHeight - padding)
+        this.contextMenu.x = Math.min(Math.max(event.clientX, padding), maxX)
+        this.contextMenu.y = Math.min(Math.max(event.clientY, padding), maxY)
+      })
     },
     buildRowPath (row) {
       if (!row || !row.Name) return ''

@@ -1,5 +1,11 @@
 <template>
-    <div class="file-list-wrapper">
+    <div
+        class="file-list-wrapper"
+        @dragenter.prevent="handleDragEnter"
+        @dragover.prevent="handleDragOver"
+        @dragleave.prevent="handleDragLeave"
+        @drop.prevent="handleDrop"
+    >
         <div class="sftp-title">SFTP文件管理</div>
         <div class="file-header">
             <el-input class="path-input" v-model="currentPath" size="small" @keyup.enter.native="getFileList()" @blur="getFileList" placeholder="当前路径..."></el-input>
@@ -41,11 +47,15 @@
             <el-table-column :label="$t('Size')" prop="Size" width="90" :resizable="true"></el-table-column>
             <el-table-column :label="$t('ModifiedTime')" prop="ModifyTime" width="160" sortable show-overflow-tooltip :resizable="true"></el-table-column>
         </el-table>
+        <div v-if="isDragOver" class="drop-mask">
+            <div class="drop-mask-content">拖拽文件到这里上传到当前目录</div>
+        </div>
     </div>
 </template>
 
 <script>
 import { fileList } from '@/api/file'
+import request from '@/utils/request'
 import { mapState } from 'vuex'
 
 export default {
@@ -61,7 +71,9 @@ export default {
             uploadTip: '',
             progressPercent: 0,
             initialRedirectDone: false,
-            homePath: ''
+            homePath: '',
+            isDragOver: false,
+            dragCounter: 0
         }
     },
     mounted() {
@@ -99,6 +111,63 @@ export default {
         }
     },
     methods: {
+        handleDragEnter() {
+            this.dragCounter += 1
+            this.isDragOver = true
+        },
+        handleDragOver() {
+            this.isDragOver = true
+        },
+        handleDragLeave() {
+            this.dragCounter = Math.max(0, this.dragCounter - 1)
+            if (this.dragCounter === 0) {
+                this.isDragOver = false
+            }
+        },
+        async handleDrop(e) {
+            this.dragCounter = 0
+            this.isDragOver = false
+            const files = Array.from(e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : [])
+            if (!files.length) {
+                return
+            }
+
+            let successCount = 0
+            for (const file of files) {
+                if (!file || !file.name || (file.size === 0 && !file.type)) {
+                    continue
+                }
+                const ok = await this.uploadDroppedFile(file)
+                if (ok) {
+                    successCount += 1
+                }
+            }
+
+            if (successCount > 0) {
+                this.$message.success(`拖拽上传完成：${successCount} 个文件`)
+                this.getFileList()
+            }
+        },
+        async uploadDroppedFile(file) {
+            const formData = new FormData()
+            formData.append('sshInfo', this.$store.getters.sshReq)
+            formData.append('path', this.currentPath)
+            formData.append('id', `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+            formData.append('file', file, file.name)
+            try {
+                const result = await request.post('/file/upload', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                })
+                if (result.Msg !== 'success') {
+                    this.$message.error(`${file.name} 上传失败: ${result.Msg}`)
+                    return false
+                }
+                return true
+            } catch (err) {
+                this.$message.error(`${file.name} 上传失败`)
+                return false
+            }
+        },
         goToHome() {
             if (this.homePath) {
                 if (this.currentPath !== this.homePath) {
@@ -242,6 +311,7 @@ export default {
     padding-top: 10px;
     box-sizing: border-box;
     background: #fff;
+    position: relative;
 
     .sftp-title {
         font-size: 16px;
@@ -324,6 +394,27 @@ export default {
             background: #fff;
         }
     }
+}
+
+.drop-mask {
+    position: absolute;
+    inset: 0;
+    background: rgba(64, 158, 255, 0.12);
+    border: 2px dashed #409eff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+}
+
+.drop-mask-content {
+    background: #fff;
+    color: #1f2937;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
 }
 .uploadContainer {
     .el-upload {

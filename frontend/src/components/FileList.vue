@@ -81,7 +81,17 @@
     <div v-if="uploadTasks.length" class="task-panel">
       <div class="task-panel-header">
         <span>上传任务（等待 {{ queuedCount }}，上传中 {{ uploadingCount }}）</span>
-        <el-button type="text" @click="clearFinishedTasks">清理已完成</el-button>
+        <div class="task-panel-actions">
+          <span class="concurrency-label">并发</span>
+          <el-input-number
+            v-model="maxConcurrentUploads"
+            :min="1"
+            :max="10"
+            size="mini"
+            controls-position="right"
+          />
+          <el-button type="text" @click="clearFinishedTasks">清理已完成</el-button>
+        </div>
       </div>
       <div class="task-list">
         <div class="task-item" v-for="task in taskDisplayList" :key="task.id">
@@ -127,7 +137,8 @@ export default {
       dialogDragCounter: 0,
       uploadTasks: [],
       uploadRequestQueue: [],
-      uploadWorkerRunning: false,
+      activeUploadCount: 0,
+      maxConcurrentUploads: 2,
       refreshTimer: null
     }
   },
@@ -151,7 +162,7 @@ export default {
       }
     },
     taskDisplayList () {
-      return this.uploadTasks.slice().reverse().slice(0, 30)
+      return this.uploadTasks.slice().reverse()
     },
     queuedCount () {
       return this.uploadTasks.filter(v => v.status === 'queued').length
@@ -169,6 +180,9 @@ export default {
     currentTab () {
       this.fileList = []
       this.currentPath = this.currentTab && this.currentTab.path ? this.currentTab.path : '/'
+    },
+    maxConcurrentUploads () {
+      this.processUploadQueue()
     }
   },
   beforeDestroy () {
@@ -189,9 +203,6 @@ export default {
         message: ''
       }
       this.uploadTasks.push(task)
-      if (this.uploadTasks.length > 300) {
-        this.uploadTasks = this.uploadTasks.slice(this.uploadTasks.length - 300)
-      }
       return task
     },
     getUploadTaskByUid (uid) {
@@ -274,13 +285,10 @@ export default {
         task: this.createUploadTask(item.file, item.dir || '')
       }))
 
-      let successCount = 0
-      for (const item of queue) {
-        const ok = await this.uploadDroppedFile(item.file, item.dir || '', item.task)
-        if (ok) {
-          successCount += 1
-        }
-      }
+      const results = await Promise.all(
+        queue.map(item => this.enqueueTaskUpload(item.file, item.dir || '', item.task))
+      )
+      const successCount = results.filter(Boolean).length
 
       if (successCount > 0) {
         this.$message.success(`上传完成：${successCount} 个文件`)
@@ -362,45 +370,16 @@ export default {
         readBatch()
       })
     },
-    async uploadDroppedFile (file, dir, taskRef = null) {
-      const task = taskRef || this.createUploadTask(file, dir)
-      task.status = 'uploading'
-      const formData = new FormData()
-      formData.append('sshInfo', this.$store.getters.sshReq)
-      formData.append('path', this.currentPath)
-      formData.append('id', `${Date.now()}-${Math.random().toString(16).slice(2)}`)
-      if (dir) {
-        formData.append('dir', dir)
-      }
-      formData.append('file', file, file.name)
-
-      try {
-        const result = await request.post('/file/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 120000,
-          skipGlobalError: true,
-          onUploadProgress: (evt) => {
-            if (!evt || !evt.total) return
-            task.progress = Math.max(task.progress, Math.min(99, Math.round((evt.loaded / evt.total) * 100)))
-          }
+    enqueueTaskUpload (file, dir = '', task = null) {
+      return new Promise(resolve => {
+        this.uploadRequestQueue.push({
+          file,
+          dir,
+          task: task || this.createUploadTask(file, dir),
+          resolve
         })
-        if (result.Msg !== 'success') {
-          task.status = 'failed'
-          task.message = result.Msg || '未知错误'
-          this.$message.error(`${file.name} 上传失败: ${result.Msg}`)
-          return false
-        }
-        task.status = 'success'
-        task.progress = 100
-        task.message = ''
-        this.scheduleFileListRefresh()
-        return true
-      } catch (err) {
-        task.status = 'failed'
-        task.message = '网络或服务异常'
-        this.$message.error(`${file.name} 上传失败`)
-        return false
-      }
+        this.processUploadQueue()
+      })
     },
     goToHome () {
       if (this.homePath) {
@@ -420,27 +399,24 @@ export default {
       this.uploadRequestQueue.push(option)
       this.processUploadQueue()
     },
-    async processUploadQueue () {
-      if (this.uploadWorkerRunning) {
-        return
-      }
-      this.uploadWorkerRunning = true
-      try {
-        while (this.uploadRequestQueue.length > 0) {
-          const option = this.uploadRequestQueue.shift()
-          // eslint-disable-next-line no-await-in-loop
-          await this.executeUploadRequest(option)
-        }
-      } finally {
-        this.uploadWorkerRunning = false
+    processUploadQueue () {
+      while (this.activeUploadCount < this.maxConcurrentUploads && this.uploadRequestQueue.length > 0) {
+        const option = this.uploadRequestQueue.shift()
+        this.activeUploadCount += 1
+        this.executeUploadRequest(option).finally(() => {
+          this.activeUploadCount = Math.max(0, this.activeUploadCount - 1)
+          this.processUploadQueue()
+        })
       }
     },
     async executeUploadRequest (option) {
       const file = option.file
-      const dirPath = file.webkitRelativePath ? file.webkitRelativePath.substring(0, file.webkitRelativePath.lastIndexOf('/')) : ''
-      let task = this.getUploadTaskByUid(file.uid)
+      const dirPath = option.dir !== undefined
+        ? option.dir
+        : (file.webkitRelativePath ? file.webkitRelativePath.substring(0, file.webkitRelativePath.lastIndexOf('/')) : '')
+      let task = option.task || this.getUploadTaskByUid(file.uid)
       if (!task) {
-        task = this.createUploadTask(file, dirPath, file.uid)
+        task = this.createUploadTask(file, dirPath, file.uid || '')
       }
       task.status = 'uploading'
 
@@ -471,17 +447,20 @@ export default {
           task.status = 'failed'
           task.message = result.Msg || '未知错误'
           if (option.onError) option.onError(new Error(task.message), file)
+          if (option.resolve) option.resolve(false)
           return
         }
         task.status = 'success'
         task.progress = 100
         task.message = ''
         if (option.onSuccess) option.onSuccess(result, file)
+        if (option.resolve) option.resolve(true)
         this.scheduleFileListRefresh()
       } catch (err) {
         task.status = 'failed'
         task.message = '网络或服务异常'
         if (option.onError) option.onError(err, file)
+        if (option.resolve) option.resolve(false)
       }
     },
     scheduleFileListRefresh () {
@@ -770,6 +749,17 @@ export default {
   font-weight: 600;
   color: #374151;
   margin-bottom: 6px;
+}
+
+.task-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.concurrency-label {
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .task-list {

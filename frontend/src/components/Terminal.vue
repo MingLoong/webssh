@@ -6,7 +6,7 @@
       </div>
       <div class="sftp-resizer" @mousedown.prevent="startResizeSftp"></div>
       <div class="file-tree" :class="{ 'is-visible': isSftpVisible }" :style="fileTreeStyle">
-        <FileList @adjust-width="adjustSftpWidth" />
+        <FileList />
       </div>
     </div>
     <div class="terminal-footer">
@@ -116,15 +116,6 @@ export default {
     },
     toggleSftpPanel () {
       this.isSftpVisible = !this.isSftpVisible
-    },
-    adjustSftpWidth (delta) {
-      if (this.windowWidth <= 768) {
-        return
-      }
-      const maxWidth = this.getSftpMaxWidth()
-      const nextWidth = this.sftpWidth + delta
-      this.sftpWidth = Math.min(maxWidth, Math.max(this.minSftpWidth, nextWidth))
-      this.syncTermSize()
     },
     syncTermSize () {
       this.$nextTick(() => {

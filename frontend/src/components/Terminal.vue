@@ -10,6 +10,9 @@
       </div>
     </div>
     <div class="terminal-footer">
+      <button v-if="wsDisconnected" @click="reconnectNow" class="reconnect-btn" :disabled="isReconnecting">
+        {{ isReconnecting ? '重连中...' : '重新连接' }}
+      </button>
       <button @click="toggleSftpPanel" class="sftp-toggle-btn" title="文件管理">
         <i class="fas fa-folder-open" style="margin-left: 15px;"></i>
       </button>
@@ -57,7 +60,16 @@ export default {
       isResizingSftp: false,
       resizeStartX: 0,
       resizeStartWidth: 350,
-      windowWidth: 1024
+      windowWidth: 1024,
+      wsDisconnected: false,
+      isReconnecting: false,
+      reconnectAttempts: 0,
+      reconnectTimer: null,
+      maxReconnectAttempts: 8,
+      termResizeHandler: null,
+      wheelSupportEvent: null,
+      wheelHandler: null,
+      termWebEl: null
     }
   },
   mounted () {
@@ -68,6 +80,48 @@ export default {
     })
   },
   methods: {
+    clearReconnectTimer () {
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = null
+      }
+    },
+    scheduleReconnect () {
+      if (this.resetClose) {
+        return
+      }
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        this.isReconnecting = false
+        return
+      }
+      if (this.reconnectTimer) {
+        return
+      }
+      this.isReconnecting = true
+      const delay = Math.min(10000, 1500 + this.reconnectAttempts * 1000)
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null
+        this.reconnectAttempts += 1
+        this.createTerm()
+      }, delay)
+    },
+    reconnectNow () {
+      this.clearReconnectTimer()
+      this.reconnectAttempts = 0
+      this.createTerm()
+    },
+    cleanupTermListeners () {
+      if (this.termWebEl && this.wheelSupportEvent && this.wheelHandler) {
+        this.termWebEl.removeEventListener(this.wheelSupportEvent, this.wheelHandler)
+      }
+      if (this.termResizeHandler) {
+        window.removeEventListener('resize', this.termResizeHandler)
+      }
+      this.termWebEl = null
+      this.wheelSupportEvent = null
+      this.wheelHandler = null
+      this.termResizeHandler = null
+    },
     handleWindowResize () {
       this.windowWidth = window.innerWidth
       if (this.windowWidth > 768) {
@@ -150,6 +204,8 @@ export default {
 
       const sshReq = this.$store.getters.sshReq
       this.close()
+      this.wsDisconnected = false
+      this.cleanupTermListeners()
       const prefix = process.env.NODE_ENV === 'production' ? '' : '/api'
       this.fitAddon = new FitAddon()
       const fitAddon = this.fitAddon
@@ -206,6 +262,10 @@ export default {
       this.ws = new WebSocket(`${(location.protocol === 'http:' ? 'ws' : 'wss')}://${location.host}${prefix}/term?sshInfo=${sshReq}&rows=${this.term.rows}&cols=${this.term.cols}&closeTip=${closeTip}`)
 
       this.ws.onopen = () => {
+        this.clearReconnectTimer()
+        this.wsDisconnected = false
+        this.isReconnecting = false
+        this.reconnectAttempts = 0
         self.connected()
         heartCheck.start()
         self._initCmdSent = false
@@ -245,13 +305,14 @@ export default {
             this.$store.commit('SET_PASS', '')
             self.ssh.password = ''
           }
+          this.wsDisconnected = true
           this.$message({
-            message: this.$t('wsClose'),
+            message: `${this.$t('wsClose')}，正在尝试重连...`,
             type: 'warning',
-            duration: 0,
-            showClose: true
+            duration: 3000
           })
           this.ws = null
+          this.scheduleReconnect()
         }
 
         heartCheck.stop()
@@ -290,7 +351,7 @@ export default {
       })
 
       const wheelSupport = 'onwheel' in document.createElement('div') ? 'wheel' : document.onmousewheel !== undefined ? 'mousewheel' : 'DOMMouseScroll'
-      termWeb.addEventListener(wheelSupport, (e) => {
+      const wheelHandler = (e) => {
         if (e.ctrlKey) {
           e.preventDefault()
           if (e.deltaY < 0) {
@@ -307,9 +368,13 @@ export default {
             self.ws.send(`resize:${self.term.rows}:${self.term.cols}`)
           }
         }
-      })
+      }
+      termWeb.addEventListener(wheelSupport, wheelHandler)
+      this.termWebEl = termWeb
+      this.wheelSupportEvent = wheelSupport
+      this.wheelHandler = wheelHandler
 
-      window.addEventListener('resize', () => {
+      const termResizeHandler = () => {
         try {
           fitAddon.fit()
         } catch (e) {
@@ -318,7 +383,9 @@ export default {
         if (self.ws !== null && self.ws.readyState === 1) {
           self.ws.send(`resize:${self.term.rows}:${self.term.cols}`)
         }
-      })
+      }
+      window.addEventListener('resize', termResizeHandler)
+      this.termResizeHandler = termResizeHandler
     },
     async connected () {
       const sshInfo = this.$store.state.sshInfo
@@ -360,12 +427,15 @@ export default {
       this.$store.commit('SET_LIST', window.btoa(sshList))
     },
     close () {
+      this.clearReconnectTimer()
+      this.cleanupTermListeners()
       if (this.ws !== null) {
         this.ws.close()
         this.resetClose = true
       }
       if (this.term !== null) {
         this.term.dispose()
+        this.term = null
       }
     }
   },
@@ -457,6 +527,21 @@ export default {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.reconnect-btn {
+  background: #f56c6c;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.reconnect-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .sftp-toggle-btn {

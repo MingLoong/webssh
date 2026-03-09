@@ -111,6 +111,9 @@ func main() {
 		file.POST("/upload/complete", func(c *gin.Context) {
 			c.JSON(200, controller.UploadComplete(c))
 		})
+		file.POST("/upload/abort", func(c *gin.Context) {
+			c.JSON(200, controller.UploadAbort(c))
+		})
 		file.GET("/progress", func(c *gin.Context) {
 			controller.UploadProgressWs(c)
 		})

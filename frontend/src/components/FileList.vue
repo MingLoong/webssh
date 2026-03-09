@@ -88,6 +88,7 @@
             <el-button size="mini" class="concurrency-value" @click="resetConcurrent">{{ maxConcurrentUploads }}</el-button>
             <el-button size="mini" icon="el-icon-plus" @click="incrementConcurrent" />
           </el-button-group>
+          <el-button type="text" @click="retryAllFailedTasks">重试失败</el-button>
           <el-button type="text" @click="clearFinishedTasks">清理已完成</el-button>
         </div>
       </div>
@@ -102,7 +103,10 @@
             :stroke-width="6"
             :status="task.status === 'failed' ? 'exception' : (task.status === 'success' ? 'success' : '')"
           />
-          <div v-if="task.status === 'failed' && task.message" class="task-error">{{ task.message }}</div>
+          <div v-if="task.status === 'failed'" class="task-error-row">
+            <div v-if="task.message" class="task-error">{{ task.message }}</div>
+            <el-button type="text" size="mini" @click="retryTask(task)">重试</el-button>
+          </div>
         </div>
       </div>
     </div>
@@ -195,6 +199,8 @@ export default {
       const task = {
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         uid,
+        file,
+        dir,
         fullName,
         status: 'queued',
         progress: 0,
@@ -221,6 +227,35 @@ export default {
     },
     resetConcurrent () {
       this.maxConcurrentUploads = 2
+    },
+    retryTask (task) {
+      if (!task || !task.file) {
+        this.$message.warning('无法重试：未找到原始文件')
+        return
+      }
+      task.status = 'queued'
+      task.progress = 0
+      task.message = ''
+      this.enqueueTaskUpload(task.file, task.dir || '', task)
+    },
+    retryAllFailedTasks () {
+      const failedTasks = this.uploadTasks.filter(v => v.status === 'failed')
+      if (!failedTasks.length) {
+        this.$message.info('没有可重试的失败任务')
+        return
+      }
+      let queued = 0
+      for (const task of failedTasks) {
+        if (!task.file) {
+          continue
+        }
+        task.status = 'queued'
+        task.progress = 0
+        task.message = ''
+        this.enqueueTaskUpload(task.file, task.dir || '', task)
+        queued += 1
+      }
+      this.$message.success(`已加入重试队列：${queued} 个任务`)
     },
     clearFinishedTasks () {
       this.uploadTasks = this.uploadTasks.filter(v => v.status === 'uploading' || v.status === 'queued')
@@ -831,6 +866,14 @@ export default {
   color: #dc2626;
   font-size: 12px;
   line-height: 1.3;
+}
+
+.task-error-row {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .uploadContainer {

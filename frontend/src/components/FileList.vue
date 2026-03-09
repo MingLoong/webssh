@@ -42,6 +42,7 @@
           ref="upload"
           multiple
           drag
+          :show-file-list="false"
           :action="uploadUrl"
           :data="uploadData"
           :before-upload="beforeUpload"
@@ -437,6 +438,7 @@ export default {
           task.status = 'success'
           task.progress = 100
           task.message = ''
+          this.uploadVisible = false
         } else {
           task.status = 'failed'
           task.message = (r && r.Msg) || '上传失败'

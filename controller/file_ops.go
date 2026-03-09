@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -85,6 +86,59 @@ func copyRemoteRecursive(client *sftp.Client, srcPath, dstPath string) error {
 		srcChild := path.Join(srcPath, child.Name())
 		dstChild := path.Join(dstPath, child.Name())
 		if err := copyRemoteRecursive(client, srcChild, dstChild); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseBoolFormValue(raw string) bool {
+	v := strings.TrimSpace(strings.ToLower(raw))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func chmodRemoteRecursive(client *sftp.Client, targetPath string, mode os.FileMode) error {
+	if err := client.Chmod(targetPath, mode); err != nil {
+		return err
+	}
+	info, err := client.Stat(targetPath)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	children, err := client.ReadDir(targetPath)
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		childPath := path.Join(targetPath, child.Name())
+		if err := chmodRemoteRecursive(client, childPath, mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func chownRemoteRecursive(client *sftp.Client, targetPath string, uid, gid int) error {
+	if err := client.Chown(targetPath, uid, gid); err != nil {
+		return err
+	}
+	info, err := client.Stat(targetPath)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	children, err := client.ReadDir(targetPath)
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		childPath := path.Join(targetPath, child.Name())
+		if err := chownRemoteRecursive(client, childPath, uid, gid); err != nil {
 			return err
 		}
 	}
@@ -334,6 +388,7 @@ func ChmodFileOrDir(c *gin.Context) *ResponseBody {
 
 	targetPath := strings.TrimSpace(c.DefaultPostForm("path", ""))
 	modeStr := strings.TrimSpace(c.DefaultPostForm("mode", ""))
+	recursive := parseBoolFormValue(c.DefaultPostForm("recursive", "false"))
 	sshInfo := strings.TrimSpace(c.DefaultPostForm("sshInfo", ""))
 	if targetPath == "" || modeStr == "" || sshInfo == "" {
 		responseBody.Msg = "path, mode and sshInfo are required"
@@ -360,9 +415,70 @@ func ChmodFileOrDir(c *gin.Context) *ResponseBody {
 	}
 	defer sshClient.Close()
 
-	if err := sshClient.Sftp.Chmod(targetPath, os.FileMode(modeValue)); err != nil {
+	mode := os.FileMode(modeValue)
+	var errChmod error
+	if recursive {
+		errChmod = chmodRemoteRecursive(sshClient.Sftp, targetPath, mode)
+	} else {
+		errChmod = sshClient.Sftp.Chmod(targetPath, mode)
+	}
+	if errChmod != nil {
+		responseBody.Msg = errChmod.Error()
+		return &responseBody
+	}
+	return &responseBody
+}
+
+// ListUserGroupCandidates returns remote user/group names for frontend autocomplete.
+func ListUserGroupCandidates(c *gin.Context) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	sshInfo := strings.TrimSpace(c.DefaultQuery("sshInfo", ""))
+	if sshInfo == "" {
+		responseBody.Msg = "sshInfo is required"
+		return &responseBody
+	}
+
+	sshClient, err := core.DecodedMsgToSSHClient(sshInfo)
+	if err != nil {
 		responseBody.Msg = err.Error()
 		return &responseBody
+	}
+	if err := sshClient.CreateSftp(); err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	defer sshClient.Close()
+
+	userMap, groupMap := loadRemoteUserGroupMaps(sshClient.Sftp)
+	userSet := make(map[string]struct{}, len(userMap))
+	groupSet := make(map[string]struct{}, len(groupMap))
+	for _, user := range userMap {
+		user = strings.TrimSpace(user)
+		if user != "" {
+			userSet[user] = struct{}{}
+		}
+	}
+	for _, group := range groupMap {
+		group = strings.TrimSpace(group)
+		if group != "" {
+			groupSet[group] = struct{}{}
+		}
+	}
+	users := make([]string, 0, len(userSet))
+	groups := make([]string, 0, len(groupSet))
+	for user := range userSet {
+		users = append(users, user)
+	}
+	for group := range groupSet {
+		groups = append(groups, group)
+	}
+	sort.Strings(users)
+	sort.Strings(groups)
+	responseBody.Data = gin.H{
+		"users":  users,
+		"groups": groups,
 	}
 	return &responseBody
 }
@@ -401,6 +517,7 @@ func ChownFileOrDir(c *gin.Context) *ResponseBody {
 	targetPath := strings.TrimSpace(c.DefaultPostForm("path", ""))
 	ownerRaw := strings.TrimSpace(c.DefaultPostForm("owner", ""))
 	groupRaw := strings.TrimSpace(c.DefaultPostForm("group", ""))
+	recursive := parseBoolFormValue(c.DefaultPostForm("recursive", "false"))
 	sshInfo := strings.TrimSpace(c.DefaultPostForm("sshInfo", ""))
 	if targetPath == "" || sshInfo == "" {
 		responseBody.Msg = "path and sshInfo are required"
@@ -456,8 +573,14 @@ func ChownFileOrDir(c *gin.Context) *ResponseBody {
 		gid = parsedGID
 	}
 
-	if err := sshClient.Sftp.Chown(targetPath, int(uid), int(gid)); err != nil {
-		responseBody.Msg = err.Error()
+	var errChown error
+	if recursive {
+		errChown = chownRemoteRecursive(sshClient.Sftp, targetPath, int(uid), int(gid))
+	} else {
+		errChown = sshClient.Sftp.Chown(targetPath, int(uid), int(gid))
+	}
+	if errChown != nil {
+		responseBody.Msg = errChown.Error()
 		return &responseBody
 	}
 	return &responseBody

@@ -64,7 +64,15 @@
     <el-table :data="fileList" class="file-table" @row-click="rowClick" @row-contextmenu="openRowContextMenu" height="100%" stripe border>
       <el-table-column :label="$t('Name')" width="260" :resizable="true" sortable :sort-method="nameSort">
         <template slot-scope="scope">
-          <div class="name-cell" :class="{ 'is-dir': scope.row.IsDir }" :title="scope.row.Name">
+          <div
+            class="name-cell"
+            :class="{ 'is-dir': scope.row.IsDir }"
+            :title="scope.row.Name"
+            @touchstart="handleRowTouchStart(scope.row, $event)"
+            @touchmove="handleRowTouchMove($event)"
+            @touchend="handleRowTouchEnd"
+            @touchcancel="handleRowTouchEnd"
+          >
             <i :class="scope.row.IsDir ? 'el-icon-folder' : 'el-icon-document'"></i>
             <span class="name-text">{{ scope.row.Name }}</span>
           </div>
@@ -89,6 +97,7 @@
       <div class="context-menu-item" @click="copyByContext">复制</div>
       <div class="context-menu-item" @click="cutByContext">剪切</div>
       <div class="context-menu-item" @click="renameByContext">重命名</div>
+      <div class="context-menu-item" @click="downloadByContext">下载</div>
       <div class="context-menu-item" @click="chmodByContext">修改权限</div>
       <div class="context-menu-item" :class="{ disabled: !copiedItem }" @click="pasteByContext">粘贴到当前目录</div>
       <div class="context-menu-item danger" @click="deleteByContext">删除</div>
@@ -219,6 +228,9 @@ export default {
       successKeepLimit: 50,
       successTotalCount: 0,
       refreshTimer: null,
+      touchContextTimer: null,
+      touchStartPoint: null,
+      longPressTriggered: false,
       copiedItem: null,
       contextMenu: {
         visible: false,
@@ -297,21 +309,61 @@ export default {
       clearTimeout(this.refreshTimer)
       this.refreshTimer = null
     }
+    if (this.touchContextTimer) {
+      clearTimeout(this.touchContextTimer)
+      this.touchContextTimer = null
+    }
     document.removeEventListener('click', this.hideContextMenu)
     window.removeEventListener('resize', this.hideContextMenu)
   },
   methods: {
+    handleRowTouchStart (row, event) {
+      const touch = event && event.touches && event.touches[0]
+      if (!touch) return
+      this.longPressTriggered = false
+      this.touchStartPoint = { x: touch.clientX, y: touch.clientY, row }
+      if (this.touchContextTimer) {
+        clearTimeout(this.touchContextTimer)
+      }
+      this.touchContextTimer = setTimeout(() => {
+        this.longPressTriggered = true
+        this.openContextMenuAt(row, touch.clientX, touch.clientY)
+      }, 550)
+    },
+    handleRowTouchMove (event) {
+      if (!this.touchContextTimer || !this.touchStartPoint) return
+      const touch = event && event.touches && event.touches[0]
+      if (!touch) return
+      const dx = Math.abs(touch.clientX - this.touchStartPoint.x)
+      const dy = Math.abs(touch.clientY - this.touchStartPoint.y)
+      if (dx > 10 || dy > 10) {
+        clearTimeout(this.touchContextTimer)
+        this.touchContextTimer = null
+      }
+    },
+    handleRowTouchEnd () {
+      if (this.touchContextTimer) {
+        clearTimeout(this.touchContextTimer)
+        this.touchContextTimer = null
+      }
+      this.touchStartPoint = null
+      setTimeout(() => {
+        this.longPressTriggered = false
+      }, 250)
+    },
     hideContextMenu () {
       this.contextMenu.visible = false
       this.contextMenu.row = null
     },
-    openRowContextMenu (row, column, event) {
-      event.preventDefault()
-      event.stopPropagation()
+    openContextMenuAt (row, clientX, clientY) {
       this.contextMenu.visible = true
       this.contextMenu.row = row
-      this.contextMenu.x = event.clientX
-      this.contextMenu.y = event.clientY
+      const containerEl = this.$el
+      const rect = containerEl && containerEl.getBoundingClientRect
+        ? containerEl.getBoundingClientRect()
+        : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+      this.contextMenu.x = clientX - rect.left
+      this.contextMenu.y = clientY - rect.top
       this.$nextTick(() => {
         const menuEl = this.$el && this.$el.querySelector
           ? this.$el.querySelector('.context-menu')
@@ -320,11 +372,16 @@ export default {
         const padding = 8
         const menuWidth = menuEl.offsetWidth || 160
         const menuHeight = menuEl.offsetHeight || 220
-        const maxX = Math.max(padding, window.innerWidth - menuWidth - padding)
-        const maxY = Math.max(padding, window.innerHeight - menuHeight - padding)
-        this.contextMenu.x = Math.min(Math.max(event.clientX, padding), maxX)
-        this.contextMenu.y = Math.min(Math.max(event.clientY, padding), maxY)
+        const maxX = Math.max(padding, rect.width - menuWidth - padding)
+        const maxY = Math.max(padding, rect.height - menuHeight - padding)
+        this.contextMenu.x = Math.min(Math.max(this.contextMenu.x, padding), maxX)
+        this.contextMenu.y = Math.min(Math.max(this.contextMenu.y, padding), maxY)
       })
+    },
+    openRowContextMenu (row, column, event) {
+      event.preventDefault()
+      event.stopPropagation()
+      this.openContextMenuAt(row, event.clientX, event.clientY)
     },
     buildRowPath (row) {
       if (!row || !row.Name) return ''
@@ -477,6 +534,13 @@ export default {
       }
       this.$message.success('重命名成功')
       this.getFileList()
+    },
+    downloadByContext () {
+      const row = this.contextMenu.row
+      this.hideContextMenu()
+      const targetPath = this.buildRowPath(row)
+      if (!targetPath) return
+      this.downloadFile(targetPath)
     },
     async chmodByContext () {
       const row = this.contextMenu.row
@@ -1054,16 +1118,15 @@ export default {
       return a.Name > b.Name
     },
     rowClick (row) {
+      if (this.longPressTriggered) {
+        this.longPressTriggered = false
+        return
+      }
       if (row.IsDir) {
         this.currentPath = this.currentPath.charAt(this.currentPath.length - 1) === '/'
           ? this.currentPath + row.Name
           : this.currentPath + '/' + row.Name
         this.getFileList()
-      } else {
-        this.downloadFilePath = this.currentPath.charAt(this.currentPath.length - 1) === '/'
-          ? this.currentPath + row.Name
-          : this.currentPath + '/' + row.Name
-        this.downloadFile()
       }
     },
     async getFileList () {
@@ -1105,9 +1168,11 @@ export default {
       this.currentPath = pathList.length === 1 ? '/' : pathList.join('/')
       this.getFileList()
     },
-    downloadFile () {
+    downloadFile (targetPath = '') {
+      const path = targetPath || this.downloadFilePath
+      if (!path) return
       const prefix = process.env.NODE_ENV === 'production' ? `${location.origin}` : 'api'
-      const downloadUrl = `${prefix}/file/download?path=${this.downloadFilePath}&sshInfo=${this.$store.getters.sshReq}`
+      const downloadUrl = `${prefix}/file/download?path=${path}&sshInfo=${this.$store.getters.sshReq}`
       window.open(downloadUrl)
     }
   }
@@ -1242,7 +1307,7 @@ export default {
 }
 
 .context-menu {
-  position: fixed;
+  position: absolute;
   min-width: 150px;
   background: #fff;
   border: 1px solid #dcdfe6;

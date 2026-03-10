@@ -10,6 +10,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -102,7 +103,7 @@ func (sclient *SSHClient) InitTerminal(ws *websocket.Conn, rows, cols int) *SSHC
 	sclient.Session = sshSession
 	sclient.StdinPipe, _ = sshSession.StdinPipe()
 	wsOutput := new(wsOutput)
-	//ssh.stdout and stderr will write output into comboWriter
+	// ssh stdout and stderr will write output into comboWriter
 	sshSession.Stdout = wsOutput
 	sshSession.Stderr = wsOutput
 	wsOutput.ws = ws
@@ -124,15 +125,29 @@ func (sclient *SSHClient) InitTerminal(ws *websocket.Conn, rows, cols int) *SSHC
 // Connect ws连接
 func (sclient *SSHClient) Connect(ws *websocket.Conn, timeout time.Duration, closeTip string) {
 	stopCh := make(chan struct{})
+	activityCh := make(chan struct{}, 1)
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			close(stopCh)
+		})
+	}
+	notifyActivity := func() {
+		select {
+		case activityCh <- struct{}{}:
+		default:
+		}
+	}
+
 	go func() {
 		for {
-			// p为用户输入
 			_, p, err := ws.ReadMessage()
 			if err != nil {
-				close(stopCh)
+				stop()
 				return
 			}
 			if string(p) == "ping" {
+				// transport heartbeat: do not reset idle timer
 				continue
 			}
 			if strings.Contains(string(p), "resize") {
@@ -142,16 +157,18 @@ func (sclient *SSHClient) Connect(ws *websocket.Conn, timeout time.Duration, clo
 				err := sclient.Session.WindowChange(rows, cols)
 				if err != nil {
 					log.Println(err)
-					close(stopCh)
+					stop()
 					return
 				}
+				notifyActivity()
 				continue
 			}
 			_, err = sclient.StdinPipe.Write(p)
 			if err != nil {
-				close(stopCh)
+				stop()
 				return
 			}
+			notifyActivity()
 		}
 	}()
 
@@ -163,14 +180,22 @@ func (sclient *SSHClient) Connect(ws *websocket.Conn, timeout time.Duration, clo
 			log.Println(err)
 		}
 	}()
-	// 设置ws超时时间
+
+	// idle timeout timer
 	stopTimer := time.NewTimer(timeout)
 	defer stopTimer.Stop()
-	// 主循环
 	for {
 		select {
 		case <-stopCh:
 			return
+		case <-activityCh:
+			if !stopTimer.Stop() {
+				select {
+				case <-stopTimer.C:
+				default:
+				}
+			}
+			stopTimer.Reset(timeout)
 		case <-stopTimer.C:
 			ws.WriteMessage(1, []byte(fmt.Sprintf("\u001B[33m%s\u001B[0m", closeTip)))
 			return
